@@ -9,8 +9,8 @@ Motion Intelligence Detector is a lightweight embedded motion classification sys
 <table>
   <tr>
     <td><strong>Core Stack</strong><br><br>
-      <kbd>C</kbd> <kbd>Python</kbd> <kbd>NumPy</kbd> <kbd>scikit-learn</kbd><br>
-      <kbd>Flipper Zero Firmware</kbd> <kbd>IMU Sensors</kbd><br>
+      <kbd>C</kbd> <kbd>Python</kbd> <kbd>NumPy</kbd> <kbd>scikit-learn</kbd><
+      <kbd>Flipper Zero Firmware</kbd> <kbd>IMU Sensors</kbd>
       <kbd>SD Card Logging</kbd> <kbd>JSON</kbd> <kbd>Git</kbd>
     </td>
   </tr>
