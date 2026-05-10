@@ -22,6 +22,11 @@ typedef enum {
 #define COUNTDOWN_FRAMES (4 * 30)
 #define FALLING_FRAMES   (75)
 
+/*
+ * IMPORTANT:
+ * This is NOT RAM-loaded animation.
+ * It's a ROM icon animation (Flash-based).
+ */
 extern const Icon A_drop_animation_128x64;
 
 typedef struct {
@@ -31,7 +36,7 @@ typedef struct {
     bool cue_played;
 } DropModel;
 
-/* ---------- UI ---------- */
+/* ---------- UI HELPERS ---------- */
 
 static void drop_view_draw_flipper_glyph(Canvas* canvas, uint8_t cx, uint8_t top) {
     uint8_t fx = cx - 7;
@@ -45,6 +50,9 @@ static void drop_view_draw_flipper_glyph(Canvas* canvas, uint8_t cx, uint8_t top
     canvas_draw_box(canvas, fx + 6, fy + 11, 2, 6);
     canvas_draw_box(canvas, fx + 4, fy + 13, 6, 2);
     canvas_set_color(canvas, ColorBlack);
+
+    canvas_draw_line(canvas, fx + 3, fy + 5, fx + 9, fy + 5);
+    canvas_draw_line(canvas, fx + 3, fy + 7, fx + 7, fy + 7);
 }
 
 static void drop_view_draw_drop_arrow(Canvas* canvas, uint8_t cx, uint8_t top) {
@@ -56,7 +64,7 @@ static void drop_view_draw_drop_arrow(Canvas* canvas, uint8_t cx, uint8_t top) {
     canvas_draw_line(canvas, cx + 3, tip - 3, cx, tip);
 }
 
-/* ---------- PHASES ---------- */
+/* ---------- SCREENS ---------- */
 
 static void drop_view_draw_arming(Canvas* canvas) {
     canvas_draw_box(canvas, 0, 0, 128, 11);
@@ -85,22 +93,26 @@ static void drop_view_draw_countdown(Canvas* canvas, DropModel* m) {
     canvas_set_font(canvas, FontBigNumbers);
 
     if(sec < 3) {
-        char buf[4];
-        snprintf(buf, sizeof(buf), "%lu", (unsigned long)(3 - sec));
-        canvas_draw_str_aligned(canvas, 64, 32, AlignCenter, AlignCenter, buf);
+        char digit[4];
+        snprintf(digit, sizeof(digit), "%lu", (unsigned long)(3 - sec));
+        canvas_draw_str_aligned(canvas, 64, 32, AlignCenter, AlignCenter, digit);
     } else {
+        canvas_set_font(canvas, FontPrimary);
         canvas_draw_str_aligned(canvas, 64, 32, AlignCenter, AlignCenter, "DROP!");
     }
 
-    uint8_t r = 12 + ((local % 30) * 12) / 30;
+    uint32_t in_sec = local % 30;
+    uint8_t r = 12 + (in_sec * 12) / 30;
     if(r < 28) canvas_draw_circle(canvas, 64, 32, r);
 }
 
+/* ✅ FIXED HERE (this was your crash) */
 static void drop_view_draw_falling(Canvas* canvas, DropModel* m) {
-    canvas_clear(canvas);
+    UNUSED(m); // <-- FIX: removes compiler error cleanly
 
-    /* FIX: correct API for Icon */
-    canvas_draw_icon(canvas, 0, 0, &A_drop_animation_128x64);
+    canvas_draw_icon_animation(canvas, 0, 0, &A_drop_animation_128x64);
+
+    canvas_draw_frame(canvas, 0, 2, 128, 3);
 }
 
 static void drop_view_draw_done(Canvas* canvas) {
@@ -124,12 +136,24 @@ static void drop_view_draw(Canvas* canvas, void* model) {
     DropModel* m = model;
 
     canvas_clear(canvas);
+    canvas_set_color(canvas, ColorBlack);
 
     switch(m->phase) {
-    case DropPhaseArming:    drop_view_draw_arming(canvas); break;
-    case DropPhaseCountdown: drop_view_draw_countdown(canvas, m); break;
-    case DropPhaseFalling:   drop_view_draw_falling(canvas, m); break;
-    case DropPhaseDone:      drop_view_draw_done(canvas); break;
+    case DropPhaseArming:
+        drop_view_draw_arming(canvas);
+        break;
+
+    case DropPhaseCountdown:
+        drop_view_draw_countdown(canvas, m);
+        break;
+
+    case DropPhaseFalling:
+        drop_view_draw_falling(canvas, m);
+        break;
+
+    case DropPhaseDone:
+        drop_view_draw_done(canvas);
+        break;
     }
 }
 
@@ -137,23 +161,30 @@ static void drop_view_draw(Canvas* canvas, void* model) {
 
 static bool drop_view_input(InputEvent* event, void* context) {
     View* view = context;
-
-    if(event->type != InputTypeShort && event->type != InputTypePress)
-        return false;
-
     bool consumed = false;
 
-    with_view_model(view, DropModel* m, {
-        if(m->phase == DropPhaseArming && event->key == InputKeyOk) {
-            m->phase = DropPhaseCountdown;
-            m->phase_start_frame = m->now_frame;
-            m->cue_played = false;
-            consumed = true;
-        }
+    if(event->type != InputTypeShort && event->type != InputTypePress) return false;
 
-        if(m->phase == DropPhaseDone && event->key == InputKeyOk) {
-            m->phase = DropPhaseArming;
-            consumed = true;
+    with_view_model(view, DropModel * m, {
+        switch(m->phase) {
+        case DropPhaseArming:
+            if(event->key == InputKeyOk) {
+                m->phase = DropPhaseCountdown;
+                m->phase_start_frame = m->now_frame;
+                m->cue_played = false;
+                consumed = true;
+            }
+            break;
+
+        case DropPhaseDone:
+            if(event->key == InputKeyOk) {
+                m->phase = DropPhaseArming;
+                consumed = true;
+            }
+            break;
+
+        default:
+            break;
         }
     }, true);
 
@@ -165,7 +196,7 @@ static bool drop_view_input(InputEvent* event, void* context) {
 static void drop_view_enter(void* context) {
     View* view = context;
 
-    with_view_model(view, DropModel* m, {
+    with_view_model(view, DropModel * m, {
         m->phase = DropPhaseArming;
         m->now_frame = 0;
         m->phase_start_frame = 0;
@@ -177,13 +208,16 @@ static void drop_view_exit(void* context) {
     UNUSED(context);
 }
 
-/* ---------- TICK ---------- */
-
 void drop_view_tick(View* view, uint32_t frame) {
-    with_view_model(view, DropModel* m, {
+    with_view_model(view, DropModel * m, {
         m->now_frame = frame;
 
         uint32_t local = frame - m->phase_start_frame;
+
+        if(m->phase == DropPhaseCountdown && !m->cue_played && local >= 3 * 30) {
+            m->cue_played = true;
+            if(drop_notif) notification_message(drop_notif, &sequence_audiovisual_alert);
+        }
 
         if(m->phase == DropPhaseCountdown && local >= COUNTDOWN_FRAMES) {
             m->phase = DropPhaseFalling;
@@ -200,7 +234,6 @@ void drop_view_tick(View* view, uint32_t frame) {
 
 View* drop_view_alloc(void) {
     View* view = view_alloc();
-
     view_allocate_model(view, ViewModelTypeLocking, sizeof(DropModel));
 
     view_set_draw_callback(view, drop_view_draw);
@@ -210,8 +243,6 @@ View* drop_view_alloc(void) {
 
     return view;
 }
-
-/* ---------- FREE ---------- */
 
 void drop_view_free(View* view) {
     view_free(view);
