@@ -27,22 +27,41 @@ typedef enum {
    MANUAL FRAME ANIMATION
    ========================= */
 
-/*
- * 🔥 YOU MUST PUT YOUR FRAMES HERE
- * Replace these with your actual generated icons
- */
-extern const Icon A_drop_frame_0;
-extern const Icon A_drop_frame_1;
-extern const Icon A_drop_frame_2;
-extern const Icon A_drop_frame_3;
-extern const Icon A_drop_frame_4;
+
+extern const Icon A_drop_animation_128x64_frame_000;
+extern const Icon A_drop_animation_128x64_frame_001;
+extern const Icon A_drop_animation_128x64_frame_002;
+extern const Icon A_drop_animation_128x64_frame_003;
+extern const Icon A_drop_animation_128x64_frame_004;
+extern const Icon A_drop_animation_128x64_frame_005;
+extern const Icon A_drop_animation_128x64_frame_006;
+extern const Icon A_drop_animation_128x64_frame_007;
+extern const Icon A_drop_animation_128x64_frame_008;
+extern const Icon A_drop_animation_128x64_frame_009;
+extern const Icon A_drop_animation_128x64_frame_010;
+extern const Icon A_drop_animation_128x64_frame_011;
+extern const Icon A_drop_animation_128x64_frame_012;
+extern const Icon A_drop_animation_128x64_frame_013;
+extern const Icon A_drop_animation_128x64_frame_014;
+extern const Icon A_drop_animation_128x64_frame_015;
 
 static const Icon* drop_frames[] = {
-    &A_drop_frame_0,
-    &A_drop_frame_1,
-    &A_drop_frame_2,
-    &A_drop_frame_3,
-    &A_drop_frame_4,
+    &A_drop_animation_128x64_frame_000,
+    &A_drop_animation_128x64_frame_001,
+    &A_drop_animation_128x64_frame_002,
+    &A_drop_animation_128x64_frame_003,
+    &A_drop_animation_128x64_frame_004,
+    &A_drop_animation_128x64_frame_005,
+    &A_drop_animation_128x64_frame_006,
+    &A_drop_animation_128x64_frame_007,
+    &A_drop_animation_128x64_frame_008,
+    &A_drop_animation_128x64_frame_009,
+    &A_drop_animation_128x64_frame_010,
+    &A_drop_animation_128x64_frame_011,
+    &A_drop_animation_128x64_frame_012,
+    &A_drop_animation_128x64_frame_013,
+    &A_drop_animation_128x64_frame_014,
+    &A_drop_animation_128x64_frame_015,
 };
 
 #define DROP_FRAME_COUNT (sizeof(drop_frames) / sizeof(drop_frames[0]))
@@ -107,20 +126,23 @@ static bool drop_view_input(InputEvent* event, void* context) {
         return false;
 
     with_view_model(view, DropModel* m, {
-
-        if(event->key == InputKeyOk) {
-
-            if(m->phase == DropPhaseArming) {
-                m->phase = DropPhaseCountdown;
-                m->phase_start_frame = m->now_frame;
-                m->anim_frame = 0;
-            }
-
-            else if(m->phase == DropPhaseDone) {
-                m->phase = DropPhaseArming;
-            }
+        if(event->key != InputKeyOk) {
+            return;
         }
 
+        // OK behavior:
+        // - From ARMINING -> start countdown.
+        // - From DONE -> go back to ARMINING.
+        // - During COUNTDOWN/FALLING -> ignore to prevent stuck phases/counters.
+        if(m->phase == DropPhaseArming) {
+            m->phase = DropPhaseCountdown;
+            m->phase_start_frame = m->now_frame;
+            m->anim_frame = 0;
+        } else if(m->phase == DropPhaseDone) {
+            m->phase = DropPhaseArming;
+            m->phase_start_frame = m->now_frame;
+            m->anim_frame = 0;
+        }
     }, true);
 
     return true;
@@ -175,3 +197,4 @@ View* drop_view_alloc(void) {
 void drop_view_free(View* view) {
     if(view) view_free(view);
 }
+

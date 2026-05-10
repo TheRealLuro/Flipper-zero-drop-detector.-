@@ -45,6 +45,15 @@ int32_t drop_detect_app(void* p) {
 /* =========================
  * MENU CALLBACK
  * ========================= */
+void drop_detect_app_request_view(DropDetectApp* app, DropDetectView view) {
+    if(!app) return;
+
+    app->frame = 0;
+    app->active_view = view;
+
+    view_dispatcher_switch_to_view(app->view_dispatcher, view);
+}
+
 static void drop_detect_submenu_callback(void* context, uint32_t index) {
     DropDetectApp* app = context;
     if(!app) return;
@@ -68,10 +77,7 @@ static void drop_detect_submenu_callback(void* context, uint32_t index) {
         return;
     }
 
-    app->frame = 0;
-    app->active_view = target;
-
-    view_dispatcher_switch_to_view(app->view_dispatcher, target);
+    drop_detect_app_request_view(app, target);
 }
 
 /* =========================
@@ -95,32 +101,42 @@ static void drop_detect_anim_tick(void* context) {
     DropDetectApp* app = context;
     if(!app) return;
 
+    // Only tick the model for the currently active view.
+    // This prevents timer-driven model mutations from interfering with submenu navigation.
     app->frame++;
 
-    // CRITICAL FIX:
-    // Ensure view models actually update safely
+    View* active = view_dispatcher_get_active_view(app->view_dispatcher);
     switch(app->active_view) {
     case DropDetectViewDrop:
-        if(app->drop_view)
+        if(active == app->drop_view) {
             drop_view_tick(app->drop_view, app->frame);
+            view_request_render(app->drop_view);
+        }
         break;
 
     case DropDetectViewIdle:
-        if(app->idle_view)
+        if(active == app->idle_view) {
             idle_view_tick(app->idle_view, app->frame);
+            view_request_render(app->idle_view);
+        }
         break;
 
     case DropDetectViewWalking:
-        if(app->walking_view)
+        if(active == app->walking_view) {
             walking_view_tick(app->walking_view, app->frame);
+            view_request_render(app->walking_view);
+        }
         break;
 
     case DropDetectViewFidget:
-        if(app->fidget_view)
+        if(active == app->fidget_view) {
             fidget_view_tick(app->fidget_view, app->frame);
+            view_request_render(app->fidget_view);
+        }
         break;
 
     default:
+        // Submenu or unknown state: do nothing.
         break;
     }
 }

@@ -4,7 +4,47 @@
 #include <gui/icon_i.h>
 #include <input/input.h>
 
-extern const Icon A_idle_128x64;
+/*
+ * Frame animation
+ * These externs must match the generated icon symbols.
+ */
+extern const Icon A_idle_128x64_frame_00;
+extern const Icon A_idle_128x64_frame_01;
+extern const Icon A_idle_128x64_frame_02;
+extern const Icon A_idle_128x64_frame_03;
+extern const Icon A_idle_128x64_frame_04;
+extern const Icon A_idle_128x64_frame_05;
+extern const Icon A_idle_128x64_frame_06;
+extern const Icon A_idle_128x64_frame_07;
+extern const Icon A_idle_128x64_frame_08;
+extern const Icon A_idle_128x64_frame_09;
+extern const Icon A_idle_128x64_frame_10;
+extern const Icon A_idle_128x64_frame_11;
+extern const Icon A_idle_128x64_frame_12;
+extern const Icon A_idle_128x64_frame_13;
+extern const Icon A_idle_128x64_frame_14;
+extern const Icon A_idle_128x64_frame_15;
+
+static const Icon* idle_frames[] = {
+    &A_idle_128x64_frame_00,
+    &A_idle_128x64_frame_01,
+    &A_idle_128x64_frame_02,
+    &A_idle_128x64_frame_03,
+    &A_idle_128x64_frame_04,
+    &A_idle_128x64_frame_05,
+    &A_idle_128x64_frame_06,
+    &A_idle_128x64_frame_07,
+    &A_idle_128x64_frame_08,
+    &A_idle_128x64_frame_09,
+    &A_idle_128x64_frame_10,
+    &A_idle_128x64_frame_11,
+    &A_idle_128x64_frame_12,
+    &A_idle_128x64_frame_13,
+    &A_idle_128x64_frame_14,
+    &A_idle_128x64_frame_15,
+};
+
+#define IDLE_FRAME_COUNT (sizeof(idle_frames) / sizeof(idle_frames[0]))
 
 typedef struct {
     uint32_t frame;
@@ -14,7 +54,10 @@ static void idle_view_draw(Canvas* canvas, void* model) {
     IdleModel* m = model;
 
     canvas_clear(canvas);
-    canvas_draw_icon(canvas, 0, 0, &A_idle_128x64);
+
+    uint32_t idx = m->frame % IDLE_FRAME_COUNT;
+    canvas_draw_icon(canvas, 0, 0, idle_frames[idx]);
+
 
     canvas_set_font(canvas, FontSecondary);
 

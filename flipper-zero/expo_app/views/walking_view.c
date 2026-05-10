@@ -4,7 +4,46 @@
 #include <gui/icon_i.h>
 #include <input/input.h>   // ✅ REQUIRED for InputEvent + UNUSED macro safety
 
-extern const Icon A_walking_animation_128x64;
+/*
+ * Frame animation
+ */
+extern const Icon A_walking_animation_128x64_frame_0;
+extern const Icon A_walking_animation_128x64_frame_1;
+extern const Icon A_walking_animation_128x64_frame_2;
+extern const Icon A_walking_animation_128x64_frame_3;
+extern const Icon A_walking_animation_128x64_frame_4;
+extern const Icon A_walking_animation_128x64_frame_5;
+extern const Icon A_walking_animation_128x64_frame_6;
+extern const Icon A_walking_animation_128x64_frame_7;
+extern const Icon A_walking_animation_128x64_frame_8;
+extern const Icon A_walking_animation_128x64_frame_9;
+extern const Icon A_walking_animation_128x64_frame_10;
+extern const Icon A_walking_animation_128x64_frame_11;
+extern const Icon A_walking_animation_128x64_frame_12;
+extern const Icon A_walking_animation_128x64_frame_13;
+extern const Icon A_walking_animation_128x64_frame_14;
+extern const Icon A_walking_animation_128x64_frame_15;
+
+static const Icon* walking_frames[] = {
+    &A_walking_animation_128x64_frame_0,
+    &A_walking_animation_128x64_frame_1,
+    &A_walking_animation_128x64_frame_2,
+    &A_walking_animation_128x64_frame_3,
+    &A_walking_animation_128x64_frame_4,
+    &A_walking_animation_128x64_frame_5,
+    &A_walking_animation_128x64_frame_6,
+    &A_walking_animation_128x64_frame_7,
+    &A_walking_animation_128x64_frame_8,
+    &A_walking_animation_128x64_frame_9,
+    &A_walking_animation_128x64_frame_10,
+    &A_walking_animation_128x64_frame_11,
+    &A_walking_animation_128x64_frame_12,
+    &A_walking_animation_128x64_frame_13,
+    &A_walking_animation_128x64_frame_14,
+    &A_walking_animation_128x64_frame_15,
+};
+
+#define WALKING_FRAME_COUNT (sizeof(walking_frames) / sizeof(walking_frames[0]))
 
 typedef struct {
     uint32_t frame;
@@ -17,7 +56,9 @@ static void walking_view_draw(Canvas* canvas, void* model) {
 
     canvas_clear(canvas);
 
-    canvas_draw_icon(canvas, 0, 0, &A_walking_animation_128x64);
+    uint32_t idx = m->frame % WALKING_FRAME_COUNT;
+    canvas_draw_icon(canvas, 0, 0, walking_frames[idx]);
+
 
     canvas_set_font(canvas, FontSecondary);
 
