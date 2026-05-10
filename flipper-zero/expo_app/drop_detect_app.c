@@ -4,32 +4,78 @@
 #include "views/walking_view.h"
 #include "views/fidget_view.h"
 
+#include <furi.h>
+#include <stdlib.h>
+#include <string.h>
+
 #define ANIM_TICK_MS 33u
 
+/* =========================
+ * FORWARD DECLARATIONS
+ * ========================= */
+static DropDetectApp* drop_detect_app_alloc(void);
+static void drop_detect_app_free(DropDetectApp* app);
 
+static void drop_detect_anim_tick(void* context);
 
+static void drop_detect_submenu_callback(void* context, uint32_t index);
+static bool drop_detect_navigation_event_callback(void* context);
+static bool drop_detect_custom_event_callback(void* context, uint32_t event);
+
+/* =========================
+ * ENTRY POINT (IMPORTANT)
+ * ========================= */
+__attribute__((used))
+int32_t drop_detect_app(void* p) {
+    UNUSED(p);
+
+    DropDetectApp* app = drop_detect_app_alloc();
+
+    view_dispatcher_switch_to_view(
+        app->view_dispatcher,
+        DropDetectViewSubmenu);
+
+    view_dispatcher_run(app->view_dispatcher);
+
+    drop_detect_app_free(app);
+
+    return 0;
+}
+
+/* =========================
+ * MENU CALLBACK
+ * ========================= */
 static void drop_detect_submenu_callback(void* context, uint32_t index) {
     DropDetectApp* app = context;
 
     DropDetectView target = DropDetectViewSubmenu;
 
     switch(index) {
-    case DropDetectMenuDrop:    target = DropDetectViewDrop; break;
-    case DropDetectMenuIdle:    target = DropDetectViewIdle; break;
-    case DropDetectMenuWalking: target = DropDetectViewWalking; break;
-    case DropDetectMenuFidget:  target = DropDetectViewFidget; break;
-    default: return;
+    case DropDetectMenuDrop:
+        target = DropDetectViewDrop;
+        break;
+    case DropDetectMenuIdle:
+        target = DropDetectViewIdle;
+        break;
+    case DropDetectMenuWalking:
+        target = DropDetectViewWalking;
+        break;
+    case DropDetectMenuFidget:
+        target = DropDetectViewFidget;
+        break;
+    default:
+        return;
     }
 
     app->frame = 0;
-
-    // IMPORTANT FIX: deactivate previous view tick ownership
     app->active_view = target;
 
     view_dispatcher_switch_to_view(app->view_dispatcher, target);
 }
 
-
+/* =========================
+ * DISPATCHER EVENTS
+ * ========================= */
 static bool drop_detect_navigation_event_callback(void* context) {
     UNUSED(context);
     return false;
@@ -41,6 +87,9 @@ static bool drop_detect_custom_event_callback(void* context, uint32_t event) {
     return false;
 }
 
+/* =========================
+ * ANIMATION TICK
+ * ========================= */
 static void drop_detect_anim_tick(void* context) {
     DropDetectApp* app = context;
 
@@ -68,7 +117,10 @@ static void drop_detect_anim_tick(void* context) {
     }
 }
 
-DropDetectApp* drop_detect_app_alloc(void) {
+/* =========================
+ * ALLOC
+ * ========================= */
+static DropDetectApp* drop_detect_app_alloc(void) {
     DropDetectApp* app = malloc(sizeof(DropDetectApp));
     memset(app, 0, sizeof(DropDetectApp));
 
@@ -107,7 +159,7 @@ DropDetectApp* drop_detect_app_alloc(void) {
         DropDetectViewSubmenu,
         submenu_get_view(app->submenu));
 
-    /* views (OK to keep all, but ONLY ACTIVE ONE ticks) */
+    /* views */
     app->drop_view = drop_view_alloc();
     drop_view_set_notification(app->notif);
     view_dispatcher_add_view(app->view_dispatcher, DropDetectViewDrop, app->drop_view);
@@ -121,7 +173,10 @@ DropDetectApp* drop_detect_app_alloc(void) {
     app->fidget_view = fidget_view_alloc();
     view_dispatcher_add_view(app->view_dispatcher, DropDetectViewFidget, app->fidget_view);
 
-    app->anim_timer = furi_timer_alloc(drop_detect_anim_tick, FuriTimerTypePeriodic, app);
+    /* timer */
+    app->anim_timer =
+        furi_timer_alloc(drop_detect_anim_tick, FuriTimerTypePeriodic, app);
+
     furi_timer_start(app->anim_timer, furi_ms_to_ticks(ANIM_TICK_MS));
 
     app->active_view = DropDetectViewSubmenu;
@@ -129,18 +184,30 @@ DropDetectApp* drop_detect_app_alloc(void) {
     return app;
 }
 
-int32_t drop_detect_app(void* p) {
-    UNUSED(p);
+/* =========================
+ * FREE
+ * ========================= */
+static void drop_detect_app_free(DropDetectApp* app) {
+    furi_timer_stop(app->anim_timer);
+    furi_timer_free(app->anim_timer);
 
-    DropDetectApp* app = drop_detect_app_alloc();
+    view_dispatcher_remove_view(app->view_dispatcher, DropDetectViewSubmenu);
+    view_dispatcher_remove_view(app->view_dispatcher, DropDetectViewDrop);
+    view_dispatcher_remove_view(app->view_dispatcher, DropDetectViewIdle);
+    view_dispatcher_remove_view(app->view_dispatcher, DropDetectViewWalking);
+    view_dispatcher_remove_view(app->view_dispatcher, DropDetectViewFidget);
 
-    view_dispatcher_switch_to_view(
-        app->view_dispatcher,
-        DropDetectViewSubmenu);
+    submenu_free(app->submenu);
 
-    view_dispatcher_run(app->view_dispatcher);
+    drop_view_free(app->drop_view);
+    idle_view_free(app->idle_view);
+    walking_view_free(app->walking_view);
+    fidget_view_free(app->fidget_view);
 
-    drop_detect_app_free(app); // ONLY cleanup here
+    view_dispatcher_free(app->view_dispatcher);
 
-    return 0;
+    furi_record_close(RECORD_NOTIFICATION);
+    furi_record_close(RECORD_GUI);
+
+    free(app);
 }
