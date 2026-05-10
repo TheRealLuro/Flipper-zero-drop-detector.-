@@ -31,12 +31,11 @@ typedef struct {
     bool cue_played;
 } DropModel;
 
-/* ---------- SIMPLE DRAW ---------- */
+/* ---------- FALLING ---------- */
 
 static void drop_view_draw_falling(Canvas* canvas, DropModel* m) {
     UNUSED(m);
 
-    /* FIX: correct API for Icon (NOT animation) */
     canvas_draw_icon(canvas, 0, 0, &A_drop_animation_128x64);
 }
 
@@ -52,6 +51,8 @@ static void drop_view_draw(Canvas* canvas, void* model) {
     case DropPhaseArming:
         canvas_set_font(canvas, FontPrimary);
         canvas_draw_str(canvas, 20, 10, "DROP MODE");
+        canvas_set_font(canvas, FontSecondary);
+        canvas_draw_str(canvas, 10, 30, "Press OK to start");
         break;
 
     case DropPhaseCountdown:
@@ -65,7 +66,7 @@ static void drop_view_draw(Canvas* canvas, void* model) {
 
     case DropPhaseDone:
         canvas_set_font(canvas, FontPrimary);
-        canvas_draw_str(canvas, 20, 10, "DONE");
+        canvas_draw_str(canvas, 40, 30, "DONE");
         break;
     }
 }
@@ -83,8 +84,10 @@ static bool drop_view_input(InputEvent* event, void* context) {
             if(m->phase == DropPhaseArming) {
                 m->phase = DropPhaseCountdown;
                 m->phase_start_frame = m->now_frame;
-            } else if(m->phase == DropPhaseDone) {
+            }
+            else if(m->phase == DropPhaseDone) {
                 m->phase = DropPhaseArming;
+                m->phase_start_frame = m->now_frame;
             }
         }
     }, true);
@@ -108,14 +111,21 @@ void drop_view_tick(View* view, uint32_t frame) {
         if(m->phase == DropPhaseFalling && local >= FALLING_FRAMES) {
             m->phase = DropPhaseDone;
         }
+
     }, true);
+
+    // 🔥 CRITICAL FIX: force redraw trigger
+    view_commit_model(view, true);
 }
 
 /* ---------- ALLOC ---------- */
 
 View* drop_view_alloc(void) {
     View* view = view_alloc();
+
     view_allocate_model(view, ViewModelTypeLocking, sizeof(DropModel));
+
+    view_set_context(view, view); // 🔥 FIX #1 (CRITICAL)
 
     view_set_draw_callback(view, drop_view_draw);
     view_set_input_callback(view, drop_view_input);
