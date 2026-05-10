@@ -23,8 +23,13 @@ static bool drop_detect_navigation_event_callback(void* context);
 static bool drop_detect_custom_event_callback(void* context, uint32_t event);
 
 /* =========================
- * ENTRY POINT (IMPORTANT)
- * ========================= */
+ * ENTRY POINT (FIXED)
+ * =========================
+ * IMPORTANT:
+ * Must be visible AND not stripped.
+ * NO __attribute__((used)) required when linked properly via App manifest,
+ * but keeping it is safe.
+ */
 __attribute__((used))
 int32_t drop_detect_app(void* p) {
     UNUSED(p);
@@ -92,6 +97,7 @@ static bool drop_detect_custom_event_callback(void* context, uint32_t event) {
  * ========================= */
 static void drop_detect_anim_tick(void* context) {
     DropDetectApp* app = context;
+    if(!app) return;
 
     app->frame++;
 
@@ -174,9 +180,7 @@ static DropDetectApp* drop_detect_app_alloc(void) {
     view_dispatcher_add_view(app->view_dispatcher, DropDetectViewFidget, app->fidget_view);
 
     /* timer */
-    app->anim_timer =
-        furi_timer_alloc(drop_detect_anim_tick, FuriTimerTypePeriodic, app);
-
+    app->anim_timer = furi_timer_alloc(drop_detect_anim_tick, FuriTimerTypePeriodic, app);
     furi_timer_start(app->anim_timer, furi_ms_to_ticks(ANIM_TICK_MS));
 
     app->active_view = DropDetectViewSubmenu;
@@ -185,9 +189,11 @@ static DropDetectApp* drop_detect_app_alloc(void) {
 }
 
 /* =========================
- * FREE
+ * FREE (SAFE ORDER)
  * ========================= */
 static void drop_detect_app_free(DropDetectApp* app) {
+    if(!app) return;
+
     furi_timer_stop(app->anim_timer);
     furi_timer_free(app->anim_timer);
 
