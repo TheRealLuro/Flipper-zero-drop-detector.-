@@ -105,7 +105,6 @@ static void drop_detect_anim_tick(void* context) {
     // This prevents timer-driven model mutations from interfering with submenu navigation.
     app->frame++;
 
-    View* active = view_dispatcher_get_active_view(app->view_dispatcher);
     switch(app->active_view) {
     case DropDetectViewDrop:
         if(active == app->drop_view) {

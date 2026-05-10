@@ -127,7 +127,7 @@ static bool drop_view_input(InputEvent* event, void* context) {
 
     with_view_model(view, DropModel* m, {
         if(event->key != InputKeyOk) {
-            return;
+            return false;
         }
 
         // OK behavior:
