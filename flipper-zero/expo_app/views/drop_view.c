@@ -2,7 +2,7 @@
 
 #include <furi.h>
 #include <gui/elements.h>
-#include <gui/icon.h>
+#include <gui/icon_i.h>
 #include <input/input.h>
 #include <notification/notification_messages.h>
 

@@ -1,7 +1,7 @@
 #include "fidget_view.h"
 
 #include <furi.h>
-#include <gui/icon.h>
+#include <gui/icon_i.h>
 #include <input/input.h>
 
 extern const Icon A_fidgeting_128x64;
