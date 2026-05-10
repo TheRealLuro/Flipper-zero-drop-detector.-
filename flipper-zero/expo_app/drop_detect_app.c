@@ -105,33 +105,23 @@ static void drop_detect_anim_tick(void* context) {
     // This prevents timer-driven model mutations from interfering with submenu navigation.
     app->frame++;
 
+    // Tick and let the view dispatcher take care of drawing.
+    // (Your SDK headers don’t expose view_request_render / view_dispatcher_get_active_view.)
     switch(app->active_view) {
     case DropDetectViewDrop:
-        if(active == app->drop_view) {
-            drop_view_tick(app->drop_view, app->frame);
-            view_request_render(app->drop_view);
-        }
+        drop_view_tick(app->drop_view, app->frame);
         break;
 
     case DropDetectViewIdle:
-        if(active == app->idle_view) {
-            idle_view_tick(app->idle_view, app->frame);
-            view_request_render(app->idle_view);
-        }
+        idle_view_tick(app->idle_view, app->frame);
         break;
 
     case DropDetectViewWalking:
-        if(active == app->walking_view) {
-            walking_view_tick(app->walking_view, app->frame);
-            view_request_render(app->walking_view);
-        }
+        walking_view_tick(app->walking_view, app->frame);
         break;
 
     case DropDetectViewFidget:
-        if(active == app->fidget_view) {
-            fidget_view_tick(app->fidget_view, app->frame);
-            view_request_render(app->fidget_view);
-        }
+        fidget_view_tick(app->fidget_view, app->frame);
         break;
 
     default:

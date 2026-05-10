@@ -2,7 +2,8 @@
 
 #include <furi.h>
 #include <gui/elements.h>
-#include <gui/icon_i.h>
+#include <gui/icon_animation.h>
+#include <gui/view.h>
 #include <gui/canvas.h>
 #include <input/input.h>
 #include <notification/notification_messages.h>
@@ -23,67 +24,15 @@ typedef enum {
 #define COUNTDOWN_FRAMES (4 * 30)
 #define FALLING_FRAMES   (75)
 
-/* =========================
-   MANUAL FRAME ANIMATION
-   ========================= */
-
-
-extern const Icon A_drop_animation_128x64_frame_000;
-extern const Icon A_drop_animation_128x64_frame_001;
-extern const Icon A_drop_animation_128x64_frame_002;
-extern const Icon A_drop_animation_128x64_frame_003;
-extern const Icon A_drop_animation_128x64_frame_004;
-extern const Icon A_drop_animation_128x64_frame_005;
-extern const Icon A_drop_animation_128x64_frame_006;
-extern const Icon A_drop_animation_128x64_frame_007;
-extern const Icon A_drop_animation_128x64_frame_008;
-extern const Icon A_drop_animation_128x64_frame_009;
-extern const Icon A_drop_animation_128x64_frame_010;
-extern const Icon A_drop_animation_128x64_frame_011;
-extern const Icon A_drop_animation_128x64_frame_012;
-extern const Icon A_drop_animation_128x64_frame_013;
-extern const Icon A_drop_animation_128x64_frame_014;
-extern const Icon A_drop_animation_128x64_frame_015;
-
-static const Icon* drop_frames[] = {
-    &A_drop_animation_128x64_frame_000,
-    &A_drop_animation_128x64_frame_001,
-    &A_drop_animation_128x64_frame_002,
-    &A_drop_animation_128x64_frame_003,
-    &A_drop_animation_128x64_frame_004,
-    &A_drop_animation_128x64_frame_005,
-    &A_drop_animation_128x64_frame_006,
-    &A_drop_animation_128x64_frame_007,
-    &A_drop_animation_128x64_frame_008,
-    &A_drop_animation_128x64_frame_009,
-    &A_drop_animation_128x64_frame_010,
-    &A_drop_animation_128x64_frame_011,
-    &A_drop_animation_128x64_frame_012,
-    &A_drop_animation_128x64_frame_013,
-    &A_drop_animation_128x64_frame_014,
-    &A_drop_animation_128x64_frame_015,
-};
-
-#define DROP_FRAME_COUNT (sizeof(drop_frames) / sizeof(drop_frames[0]))
+extern const Icon A_drop_animation_128x64;
 
 typedef struct {
     DropPhase phase;
     uint32_t phase_start_frame;
     uint32_t now_frame;
 
-    uint8_t anim_frame;
+    IconAnimation* anim;
 } DropModel;
-
-/* ---------- FALLING DRAW ---------- */
-
-static void drop_view_draw_falling(Canvas* canvas, DropModel* m) {
-    if(!m) return;
-
-    /* advance frame */
-    uint8_t frame = m->anim_frame % DROP_FRAME_COUNT;
-
-    canvas_draw_icon(canvas, 0, 0, drop_frames[frame]);
-}
 
 /* ---------- MAIN DRAW ---------- */
 
@@ -107,7 +56,9 @@ static void drop_view_draw(Canvas* canvas, void* model) {
         break;
 
     case DropPhaseFalling:
-        drop_view_draw_falling(canvas, m);
+        if(m->anim) {
+            canvas_draw_icon_animation(canvas, 0, 0, m->anim);
+        }
         break;
 
     case DropPhaseDone:
@@ -137,11 +88,9 @@ static bool drop_view_input(InputEvent* event, void* context) {
         if(m->phase == DropPhaseArming) {
             m->phase = DropPhaseCountdown;
             m->phase_start_frame = m->now_frame;
-            m->anim_frame = 0;
         } else if(m->phase == DropPhaseDone) {
             m->phase = DropPhaseArming;
             m->phase_start_frame = m->now_frame;
-            m->anim_frame = 0;
         }
     }, true);
 
@@ -164,17 +113,20 @@ void drop_view_tick(View* view, uint32_t frame) {
         if(m->phase == DropPhaseCountdown && local >= COUNTDOWN_FRAMES) {
             m->phase = DropPhaseFalling;
             m->phase_start_frame = frame;
-            m->anim_frame = 0;
-        }
-
-        /* animate frames ONLY during falling */
-        if(m->phase == DropPhaseFalling) {
-            m->anim_frame++;
         }
 
         /* falling → done */
         if(m->phase == DropPhaseFalling && local >= FALLING_FRAMES) {
             m->phase = DropPhaseDone;
+        }
+
+        /* sync animation to current phase (start/stop are idempotent) */
+        if(m->anim) {
+            if(m->phase == DropPhaseFalling) {
+                icon_animation_start(m->anim);
+            } else {
+                icon_animation_stop(m->anim);
+            }
         }
 
     }, true);
@@ -188,6 +140,13 @@ View* drop_view_alloc(void) {
 
     view_allocate_model(view, ViewModelTypeLocking, sizeof(DropModel));
 
+    IconAnimation* anim = icon_animation_alloc(&A_drop_animation_128x64);
+    view_tie_icon_animation(view, anim);
+
+    with_view_model(view, DropModel* m, {
+        m->anim = anim;
+    }, false);
+
     view_set_draw_callback(view, drop_view_draw);
     view_set_input_callback(view, drop_view_input);
 
@@ -195,6 +154,18 @@ View* drop_view_alloc(void) {
 }
 
 void drop_view_free(View* view) {
-    if(view) view_free(view);
-}
+    if(!view) return;
 
+    IconAnimation* anim = NULL;
+    with_view_model(view, DropModel* m, {
+        anim = m->anim;
+        m->anim = NULL;
+    }, false);
+
+    if(anim) {
+        icon_animation_stop(anim);
+        icon_animation_free(anim);
+    }
+
+    view_free(view);
+}
