@@ -35,8 +35,6 @@ typedef struct DropDetectApp {
     FuriTimer* anim_timer;
 
     uint32_t frame;
-
-    
     DropDetectView active_view;
 
 } DropDetectApp;
