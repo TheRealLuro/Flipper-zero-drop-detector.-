@@ -11,9 +11,10 @@ typedef struct {
 
 static void fidget_view_draw(Canvas* canvas, void* model) {
     FidgetModel* m = model;
+
     canvas_clear(canvas);
 
-    canvas_draw_icon_animation(canvas, 0, 0, &A_fidgeting_128x64);
+    canvas_draw_icon(canvas, 0, 0, &A_fidgeting_128x64);
 
     canvas_set_font(canvas, FontSecondary);
     canvas_draw_str(canvas, 2, 62, "REC");
@@ -42,6 +43,4 @@ View* fidget_view_alloc(void) {
     return view;
 }
 
-void fidget_view_free(View* view) {
-    view_free(view);
-}
+void fidget_view_free(View* view) { view_free(view); }

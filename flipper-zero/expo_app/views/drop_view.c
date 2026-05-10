@@ -31,7 +31,7 @@ typedef struct {
     bool cue_played;
 } DropModel;
 
-/* ---------- UI helpers ---------- */
+/* ---------- UI ---------- */
 
 static void drop_view_draw_flipper_glyph(Canvas* canvas, uint8_t cx, uint8_t top) {
     uint8_t fx = cx - 7;
@@ -56,7 +56,7 @@ static void drop_view_draw_drop_arrow(Canvas* canvas, uint8_t cx, uint8_t top) {
     canvas_draw_line(canvas, cx + 3, tip - 3, cx, tip);
 }
 
-/* ---------- phases ---------- */
+/* ---------- PHASES ---------- */
 
 static void drop_view_draw_arming(Canvas* canvas) {
     canvas_draw_box(canvas, 0, 0, 128, 11);
@@ -89,7 +89,6 @@ static void drop_view_draw_countdown(Canvas* canvas, DropModel* m) {
         snprintf(buf, sizeof(buf), "%lu", (unsigned long)(3 - sec));
         canvas_draw_str_aligned(canvas, 64, 32, AlignCenter, AlignCenter, buf);
     } else {
-        canvas_set_font(canvas, FontPrimary);
         canvas_draw_str_aligned(canvas, 64, 32, AlignCenter, AlignCenter, "DROP!");
     }
 
@@ -97,16 +96,11 @@ static void drop_view_draw_countdown(Canvas* canvas, DropModel* m) {
     if(r < 28) canvas_draw_circle(canvas, 64, 32, r);
 }
 
-/* ✅ FIXED: no frame array usage */
 static void drop_view_draw_falling(Canvas* canvas, DropModel* m) {
-    uint32_t local = m->now_frame - m->phase_start_frame;
-    if(local > FALLING_FRAMES) local = FALLING_FRAMES;
+    canvas_clear(canvas);
 
-    canvas_draw_icon_animation(canvas, 0, 0, &A_drop_animation_128x64);
-
-    uint16_t fill = (local * 126) / FALLING_FRAMES;
-    canvas_draw_frame(canvas, 0, 2, 128, 3);
-    if(fill > 0) canvas_draw_box(canvas, 1, 3, fill > 126 ? 126 : fill, 1);
+    /* FIX: correct API for Icon */
+    canvas_draw_icon(canvas, 0, 0, &A_drop_animation_128x64);
 }
 
 static void drop_view_draw_done(Canvas* canvas) {
@@ -124,8 +118,11 @@ static void drop_view_draw_done(Canvas* canvas) {
     elements_button_center(canvas, "Again");
 }
 
+/* ---------- MAIN DRAW ---------- */
+
 static void drop_view_draw(Canvas* canvas, void* model) {
     DropModel* m = model;
+
     canvas_clear(canvas);
 
     switch(m->phase) {
@@ -136,7 +133,7 @@ static void drop_view_draw(Canvas* canvas, void* model) {
     }
 }
 
-/* ---- logic unchanged ---- */
+/* ---------- INPUT ---------- */
 
 static bool drop_view_input(InputEvent* event, void* context) {
     View* view = context;
@@ -163,18 +160,24 @@ static bool drop_view_input(InputEvent* event, void* context) {
     return consumed;
 }
 
+/* ---------- LIFECYCLE ---------- */
+
 static void drop_view_enter(void* context) {
     View* view = context;
+
     with_view_model(view, DropModel* m, {
         m->phase = DropPhaseArming;
         m->now_frame = 0;
         m->phase_start_frame = 0;
+        m->cue_played = false;
     }, true);
 }
 
 static void drop_view_exit(void* context) {
     UNUSED(context);
 }
+
+/* ---------- TICK ---------- */
 
 void drop_view_tick(View* view, uint32_t frame) {
     with_view_model(view, DropModel* m, {
@@ -193,15 +196,22 @@ void drop_view_tick(View* view, uint32_t frame) {
     }, true);
 }
 
+/* ---------- ALLOC ---------- */
+
 View* drop_view_alloc(void) {
     View* view = view_alloc();
+
     view_allocate_model(view, ViewModelTypeLocking, sizeof(DropModel));
+
     view_set_draw_callback(view, drop_view_draw);
     view_set_input_callback(view, drop_view_input);
     view_set_enter_callback(view, drop_view_enter);
     view_set_exit_callback(view, drop_view_exit);
+
     return view;
 }
+
+/* ---------- FREE ---------- */
 
 void drop_view_free(View* view) {
     view_free(view);
