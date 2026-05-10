@@ -6,21 +6,7 @@
 
 #define ANIM_TICK_MS 33u
 
-int32_t drop_detect_app(void* p) {
-    UNUSED(p);
 
-    DropDetectApp* app = drop_detect_app_alloc();
-
-    view_dispatcher_switch_to_view(
-        app->view_dispatcher,
-        DropDetectViewSubmenu);
-
-    view_dispatcher_run(app->view_dispatcher);
-
-    drop_detect_app_free(app); // ONLY cleanup here
-
-    return 0;
-}
 
 static void drop_detect_submenu_callback(void* context, uint32_t index) {
     DropDetectApp* app = context;
@@ -141,4 +127,20 @@ DropDetectApp* drop_detect_app_alloc(void) {
     app->active_view = DropDetectViewSubmenu;
 
     return app;
+}
+
+int32_t drop_detect_app(void* p) {
+    UNUSED(p);
+
+    DropDetectApp* app = drop_detect_app_alloc();
+
+    view_dispatcher_switch_to_view(
+        app->view_dispatcher,
+        DropDetectViewSubmenu);
+
+    view_dispatcher_run(app->view_dispatcher);
+
+    drop_detect_app_free(app); // ONLY cleanup here
+
+    return 0;
 }
