@@ -23,18 +23,13 @@ static bool drop_detect_navigation_event_callback(void* context);
 static bool drop_detect_custom_event_callback(void* context, uint32_t event);
 
 /* =========================
- * ENTRY POINT (FIXED)
- * =========================
- * IMPORTANT:
- * Must be visible AND not stripped.
- * NO __attribute__((used)) required when linked properly via App manifest,
- * but keeping it is safe.
- */
-__attribute__((used))
+ * ENTRY POINT
+ * ========================= */
 int32_t drop_detect_app(void* p) {
     UNUSED(p);
 
     DropDetectApp* app = drop_detect_app_alloc();
+    if(!app) return -1;
 
     view_dispatcher_switch_to_view(
         app->view_dispatcher,
@@ -52,6 +47,7 @@ int32_t drop_detect_app(void* p) {
  * ========================= */
 static void drop_detect_submenu_callback(void* context, uint32_t index) {
     DropDetectApp* app = context;
+    if(!app) return;
 
     DropDetectView target = DropDetectViewSubmenu;
 
@@ -79,7 +75,7 @@ static void drop_detect_submenu_callback(void* context, uint32_t index) {
 }
 
 /* =========================
- * DISPATCHER EVENTS
+ * EVENTS
  * ========================= */
 static bool drop_detect_navigation_event_callback(void* context) {
     UNUSED(context);
@@ -101,21 +97,27 @@ static void drop_detect_anim_tick(void* context) {
 
     app->frame++;
 
+    // CRITICAL FIX:
+    // Ensure view models actually update safely
     switch(app->active_view) {
     case DropDetectViewDrop:
-        drop_view_tick(app->drop_view, app->frame);
+        if(app->drop_view)
+            drop_view_tick(app->drop_view, app->frame);
         break;
 
     case DropDetectViewIdle:
-        idle_view_tick(app->idle_view, app->frame);
+        if(app->idle_view)
+            idle_view_tick(app->idle_view, app->frame);
         break;
 
     case DropDetectViewWalking:
-        walking_view_tick(app->walking_view, app->frame);
+        if(app->walking_view)
+            walking_view_tick(app->walking_view, app->frame);
         break;
 
     case DropDetectViewFidget:
-        fidget_view_tick(app->fidget_view, app->frame);
+        if(app->fidget_view)
+            fidget_view_tick(app->fidget_view, app->frame);
         break;
 
     default:
@@ -128,6 +130,8 @@ static void drop_detect_anim_tick(void* context) {
  * ========================= */
 static DropDetectApp* drop_detect_app_alloc(void) {
     DropDetectApp* app = malloc(sizeof(DropDetectApp));
+    if(!app) return NULL;
+
     memset(app, 0, sizeof(DropDetectApp));
 
     app->gui = furi_record_open(RECORD_GUI);
@@ -152,7 +156,6 @@ static DropDetectApp* drop_detect_app_alloc(void) {
 
     /* submenu */
     app->submenu = submenu_alloc();
-
     submenu_set_header(app->submenu, "FliPort");
 
     submenu_add_item(app->submenu, "Drop",    DropDetectMenuDrop,    drop_detect_submenu_callback, app);
@@ -180,8 +183,14 @@ static DropDetectApp* drop_detect_app_alloc(void) {
     view_dispatcher_add_view(app->view_dispatcher, DropDetectViewFidget, app->fidget_view);
 
     /* timer */
-    app->anim_timer = furi_timer_alloc(drop_detect_anim_tick, FuriTimerTypePeriodic, app);
-    furi_timer_start(app->anim_timer, furi_ms_to_ticks(ANIM_TICK_MS));
+    app->anim_timer = furi_timer_alloc(
+        drop_detect_anim_tick,
+        FuriTimerTypePeriodic,
+        app);
+
+    if(app->anim_timer) {
+        furi_timer_start(app->anim_timer, furi_ms_to_ticks(ANIM_TICK_MS));
+    }
 
     app->active_view = DropDetectViewSubmenu;
 
@@ -189,13 +198,15 @@ static DropDetectApp* drop_detect_app_alloc(void) {
 }
 
 /* =========================
- * FREE (SAFE ORDER)
+ * FREE
  * ========================= */
 static void drop_detect_app_free(DropDetectApp* app) {
     if(!app) return;
 
-    furi_timer_stop(app->anim_timer);
-    furi_timer_free(app->anim_timer);
+    if(app->anim_timer) {
+        furi_timer_stop(app->anim_timer);
+        furi_timer_free(app->anim_timer);
+    }
 
     view_dispatcher_remove_view(app->view_dispatcher, DropDetectViewSubmenu);
     view_dispatcher_remove_view(app->view_dispatcher, DropDetectViewDrop);
