@@ -122,6 +122,7 @@ static void drop_view_draw_done(Canvas* canvas) {
 
 static void drop_view_draw(Canvas* canvas, void* model) {
     DropModel* m = model;
+    UNUSED(m);
 
     canvas_clear(canvas);
 

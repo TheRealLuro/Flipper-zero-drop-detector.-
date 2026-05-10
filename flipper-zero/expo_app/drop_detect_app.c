@@ -27,10 +27,10 @@ static void drop_detect_submenu_callback(void* context, uint32_t index) {
     view_dispatcher_switch_to_view(app->view_dispatcher, target);
 }
 
-/* ONLY FOR BACK NAV */
-static uint32_t drop_detect_navigation_event_callback(void* context) {
+
+static bool drop_detect_navigation_event_callback(void* context) {
     UNUSED(context);
-    return DropDetectViewSubmenu;
+    return false;
 }
 
 static bool drop_detect_custom_event_callback(void* context, uint32_t event) {
@@ -44,7 +44,6 @@ static void drop_detect_anim_tick(void* context) {
 
     app->frame++;
 
-    // 🔥 CRITICAL FIX: ONLY UPDATE ACTIVE VIEW
     switch(app->active_view) {
     case DropDetectViewDrop:
         drop_view_tick(app->drop_view, app->frame);
@@ -67,7 +66,7 @@ static void drop_detect_anim_tick(void* context) {
     }
 }
 
-static DropDetectApp* drop_detect_app_alloc(void) {
+DropDetectApp* drop_detect_app_alloc(void) {
     DropDetectApp* app = malloc(sizeof(DropDetectApp));
     memset(app, 0, sizeof(DropDetectApp));
 

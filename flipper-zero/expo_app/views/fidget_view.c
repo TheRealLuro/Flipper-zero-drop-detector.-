@@ -11,6 +11,7 @@ typedef struct {
 
 static void fidget_view_draw(Canvas* canvas, void* model) {
     FidgetModel* m = model;
+    (void)m;
 
     canvas_clear(canvas);
 
