@@ -1,13 +1,16 @@
+
 #pragma once
 
 #include <furi.h>
+
 #include <gui/gui.h>
 #include <gui/view_dispatcher.h>
 #include <gui/modules/submenu.h>
+
 #include <notification/notification.h>
 
 typedef enum {
-    DropDetectViewSubmenu,
+    DropDetectViewSubmenu = 0,
     DropDetectViewDrop,
     DropDetectViewIdle,
     DropDetectViewWalking,
@@ -15,7 +18,7 @@ typedef enum {
 } DropDetectView;
 
 typedef enum {
-    DropDetectMenuDrop,
+    DropDetectMenuDrop = 0,
     DropDetectMenuIdle,
     DropDetectMenuWalking,
     DropDetectMenuFidget,
@@ -23,8 +26,11 @@ typedef enum {
 
 typedef struct DropDetectApp {
     Gui* gui;
+
     ViewDispatcher* view_dispatcher;
+
     Submenu* submenu;
+
     NotificationApp* notif;
 
     View* drop_view;
@@ -33,7 +39,11 @@ typedef struct DropDetectApp {
     View* fidget_view;
 
     FuriTimer* anim_timer;
+
     uint32_t frame;
+
 } DropDetectApp;
 
-void drop_detect_app_request_view(DropDetectApp* app, DropDetectView view);
+void drop_detect_app_request_view(
+    DropDetectApp* app,
+    DropDetectView view);
