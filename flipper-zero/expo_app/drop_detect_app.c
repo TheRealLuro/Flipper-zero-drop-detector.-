@@ -1,4 +1,4 @@
-// FliPort - imu sample collector for offline classifier training
+// FliPort - IMU sample collector (optimized + Flipper-safe)
 
 #include "drop_detect_app.h"
 #include "views/drop_view.h"
@@ -8,9 +8,7 @@
 
 #define ANIM_TICK_MS 33u
 
-/* -----------------------------
- * SUBMENU CALLBACK
- * ----------------------------- */
+/* ---------------- SUBMENU ---------------- */
 static void drop_detect_submenu_callback(void* context, uint32_t index) {
     DropDetectApp* app = context;
     DropDetectView target = DropDetectViewSubmenu;
@@ -33,60 +31,60 @@ static void drop_detect_submenu_callback(void* context, uint32_t index) {
     }
 
     app->frame = 0;
+    app->active_view = target;
+
     view_dispatcher_switch_to_view(app->view_dispatcher, target);
 }
 
-/* -----------------------------
- * NAVIGATION CALLBACK (FIXED)
- * ----------------------------- */
+/* ---------------- NAV CALLBACK ---------------- */
 static bool drop_detect_navigation_event_callback(void* context) {
     UNUSED(context);
     return false;
 }
 
-/* -----------------------------
- * CUSTOM EVENTS (unused)
- * ----------------------------- */
 static bool drop_detect_custom_event_callback(void* context, uint32_t event) {
     UNUSED(context);
     UNUSED(event);
     return false;
 }
 
-/* -----------------------------
- * REQUEST VIEW
- * ----------------------------- */
+/* ---------------- VIEW REQUEST ---------------- */
 void drop_detect_app_request_view(DropDetectApp* app, DropDetectView view) {
     app->frame = 0;
+    app->active_view = view;
+
     view_dispatcher_switch_to_view(app->view_dispatcher, view);
 }
 
-/* -----------------------------
- * OPTIMIZED TICK (ACTIVE VIEW ONLY)
- * ----------------------------- */
+/* ---------------- TIMER TICK (FIXED ARCH) ---------------- */
 static void drop_detect_anim_tick(void* context) {
     DropDetectApp* app = context;
+
     app->frame++;
 
-    View* active = view_dispatcher_get_current_view(app->view_dispatcher);
-
-    if(active == app->drop_view) {
+    switch(app->active_view) {
+    case DropDetectViewDrop:
         drop_view_tick(app->drop_view, app->frame);
-    }
-    else if(active == app->idle_view) {
+        break;
+
+    case DropDetectViewIdle:
         idle_view_tick(app->idle_view, app->frame);
-    }
-    else if(active == app->walking_view) {
+        break;
+
+    case DropDetectViewWalking:
         walking_view_tick(app->walking_view, app->frame);
-    }
-    else if(active == app->fidget_view) {
+        break;
+
+    case DropDetectViewFidget:
         fidget_view_tick(app->fidget_view, app->frame);
+        break;
+
+    default:
+        break;
     }
 }
 
-/* -----------------------------
- * SUBMENU SETUP
- * ----------------------------- */
+/* ---------------- SUBMENU SETUP ---------------- */
 static void drop_detect_submenu_setup(DropDetectApp* app) {
     submenu_set_header(app->submenu, "FliPort");
 
@@ -111,9 +109,7 @@ static void drop_detect_submenu_setup(DropDetectApp* app) {
         app);
 }
 
-/* -----------------------------
- * ALLOC (OPTIMIZED)
- * ----------------------------- */
+/* ---------------- ALLOC ---------------- */
 static DropDetectApp* drop_detect_app_alloc(void) {
     DropDetectApp* app = malloc(sizeof(DropDetectApp));
     memset(app, 0, sizeof(DropDetectApp));
@@ -138,9 +134,7 @@ static DropDetectApp* drop_detect_app_alloc(void) {
         app->view_dispatcher,
         drop_detect_custom_event_callback);
 
-    /* -------------------------
-     * SUBMENU (ONLY ALWAYS-LOADED VIEW)
-     * ------------------------- */
+    /* submenu */
     app->submenu = submenu_alloc();
     drop_detect_submenu_setup(app);
 
@@ -149,38 +143,22 @@ static DropDetectApp* drop_detect_app_alloc(void) {
         DropDetectViewSubmenu,
         submenu_get_view(app->submenu));
 
-    /* -------------------------
-     * LAZY VIEWS (NOT ALL PRELOADED)
-     * ------------------------- */
+    /* views (still preloaded but SAFE now) */
     app->drop_view = drop_view_alloc();
     drop_view_set_notification(app->notif);
 
-    view_dispatcher_add_view(
-        app->view_dispatcher,
-        DropDetectViewDrop,
-        app->drop_view);
+    view_dispatcher_add_view(app->view_dispatcher, DropDetectViewDrop, app->drop_view);
 
     app->idle_view = idle_view_alloc();
-    view_dispatcher_add_view(
-        app->view_dispatcher,
-        DropDetectViewIdle,
-        app->idle_view);
+    view_dispatcher_add_view(app->view_dispatcher, DropDetectViewIdle, app->idle_view);
 
     app->walking_view = walking_view_alloc();
-    view_dispatcher_add_view(
-        app->view_dispatcher,
-        DropDetectViewWalking,
-        app->walking_view);
+    view_dispatcher_add_view(app->view_dispatcher, DropDetectViewWalking, app->walking_view);
 
     app->fidget_view = fidget_view_alloc();
-    view_dispatcher_add_view(
-        app->view_dispatcher,
-        DropDetectViewFidget,
-        app->fidget_view);
+    view_dispatcher_add_view(app->view_dispatcher, DropDetectViewFidget, app->fidget_view);
 
-    /* -------------------------
-     * TIMER (OPTIMIZED)
-     * ------------------------- */
+    /* timer */
     app->anim_timer = furi_timer_alloc(
         drop_detect_anim_tick,
         FuriTimerTypePeriodic,
@@ -188,12 +166,13 @@ static DropDetectApp* drop_detect_app_alloc(void) {
 
     furi_timer_start(app->anim_timer, furi_ms_to_ticks(ANIM_TICK_MS));
 
+    /* initial state */
+    app->active_view = DropDetectViewSubmenu;
+
     return app;
 }
 
-/* -----------------------------
- * FREE
- * ----------------------------- */
+/* ---------------- FREE ---------------- */
 static void drop_detect_app_free(DropDetectApp* app) {
     furi_timer_stop(app->anim_timer);
     furi_timer_free(app->anim_timer);
@@ -219,17 +198,13 @@ static void drop_detect_app_free(DropDetectApp* app) {
     free(app);
 }
 
-/* -----------------------------
- * ENTRY POINT
- * ----------------------------- */
+/* ---------------- ENTRY ---------------- */
 int32_t drop_detect_app(void* p) {
     UNUSED(p);
 
     DropDetectApp* app = drop_detect_app_alloc();
 
-    view_dispatcher_switch_to_view(
-        app->view_dispatcher,
-        DropDetectViewSubmenu);
+    view_dispatcher_switch_to_view(app->view_dispatcher, DropDetectViewSubmenu);
 
     view_dispatcher_run(app->view_dispatcher);
 

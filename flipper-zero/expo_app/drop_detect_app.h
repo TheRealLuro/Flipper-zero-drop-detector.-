@@ -1,12 +1,9 @@
-
 #pragma once
 
 #include <furi.h>
-
 #include <gui/gui.h>
 #include <gui/view_dispatcher.h>
 #include <gui/modules/submenu.h>
-
 #include <notification/notification.h>
 
 typedef enum {
@@ -26,11 +23,8 @@ typedef enum {
 
 typedef struct DropDetectApp {
     Gui* gui;
-
     ViewDispatcher* view_dispatcher;
-
     Submenu* submenu;
-
     NotificationApp* notif;
 
     View* drop_view;
@@ -42,8 +36,9 @@ typedef struct DropDetectApp {
 
     uint32_t frame;
 
+    
+    DropDetectView active_view;
+
 } DropDetectApp;
 
-void drop_detect_app_request_view(
-    DropDetectApp* app,
-    DropDetectView view);
+void drop_detect_app_request_view(DropDetectApp* app, DropDetectView view);
