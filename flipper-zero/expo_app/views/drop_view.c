@@ -110,7 +110,7 @@ static void drop_view_draw_countdown(Canvas* canvas, DropModel* m) {
 static void drop_view_draw_falling(Canvas* canvas, DropModel* m) {
     UNUSED(m); // <-- FIX: removes compiler error cleanly
 
-    canvas_draw_icon_animation(canvas, 0, 0, &A_drop_animation_128x64);
+    canvas_draw_icon(canvas, 0, 0, &A_drop_animation_128x64);
 
     canvas_draw_frame(canvas, 0, 2, 128, 3);
 }
