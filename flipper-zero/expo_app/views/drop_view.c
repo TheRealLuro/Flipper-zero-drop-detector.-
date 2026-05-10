@@ -23,38 +23,47 @@ typedef enum {
 #define COUNTDOWN_FRAMES (4 * 30)
 #define FALLING_FRAMES   (75)
 
+/* =========================
+   MANUAL FRAME ANIMATION
+   ========================= */
+
 /*
- * IMPORTANT:
- * This MUST be IconAnimation (not Icon)
- * because your asset is PNG frames.
+ * 🔥 YOU MUST PUT YOUR FRAMES HERE
+ * Replace these with your actual generated icons
  */
-extern const IconAnimation A_drop_animation_128x64;
+extern const Icon A_drop_frame_0;
+extern const Icon A_drop_frame_1;
+extern const Icon A_drop_frame_2;
+extern const Icon A_drop_frame_3;
+extern const Icon A_drop_frame_4;
+
+static const Icon* drop_frames[] = {
+    &A_drop_frame_0,
+    &A_drop_frame_1,
+    &A_drop_frame_2,
+    &A_drop_frame_3,
+    &A_drop_frame_4,
+};
+
+#define DROP_FRAME_COUNT (sizeof(drop_frames) / sizeof(drop_frames[0]))
 
 typedef struct {
     DropPhase phase;
     uint32_t phase_start_frame;
     uint32_t now_frame;
-    bool cue_played;
 
-    /* animation frame index */
     uint8_t anim_frame;
 } DropModel;
 
-/* ---------- FALLING ANIMATION ---------- */
+/* ---------- FALLING DRAW ---------- */
 
 static void drop_view_draw_falling(Canvas* canvas, DropModel* m) {
-    if(!canvas || !m) return;
+    if(!m) return;
 
-    /*
-     * FIX:
-     * correct API = canvas_draw_icon_animation
-     * correct type = IconAnimation*
-     */
-    canvas_draw_icon_animation(
-        canvas,
-        0,
-        0,
-        (IconAnimation*)&A_drop_animation_128x64);
+    /* advance frame */
+    uint8_t frame = m->anim_frame % DROP_FRAME_COUNT;
+
+    canvas_draw_icon(canvas, 0, 0, drop_frames[frame]);
 }
 
 /* ---------- MAIN DRAW ---------- */
@@ -71,28 +80,11 @@ static void drop_view_draw(Canvas* canvas, void* model) {
     case DropPhaseArming:
         canvas_set_font(canvas, FontPrimary);
         canvas_draw_str(canvas, 20, 10, "DROP MODE");
-        canvas_set_font(canvas, FontSecondary);
-        canvas_draw_str(canvas, 10, 30, "Press OK to start");
         break;
 
     case DropPhaseCountdown:
         canvas_set_font(canvas, FontPrimary);
-        canvas_draw_str(canvas, 18, 10, "GET READY");
-
-        canvas_set_font(canvas, FontBigNumbers);
-
-        {
-            uint32_t sec = (m->now_frame - m->phase_start_frame) / 30;
-            char buf[8];
-
-            if(sec < 3) {
-                snprintf(buf, sizeof(buf), "%lu", (unsigned long)(3 - sec));
-            } else {
-                snprintf(buf, sizeof(buf), "GO");
-            }
-
-            canvas_draw_str(canvas, 50, 35, buf);
-        }
+        canvas_draw_str(canvas, 18, 10, "READY");
         break;
 
     case DropPhaseFalling:
@@ -101,7 +93,7 @@ static void drop_view_draw(Canvas* canvas, void* model) {
 
     case DropPhaseDone:
         canvas_set_font(canvas, FontPrimary);
-        canvas_draw_str(canvas, 25, 20, "SAMPLE DONE");
+        canvas_draw_str(canvas, 25, 20, "DONE");
         break;
     }
 }
@@ -121,7 +113,7 @@ static bool drop_view_input(InputEvent* event, void* context) {
             if(m->phase == DropPhaseArming) {
                 m->phase = DropPhaseCountdown;
                 m->phase_start_frame = m->now_frame;
-                m->cue_played = false;
+                m->anim_frame = 0;
             }
 
             else if(m->phase == DropPhaseDone) {
@@ -137,19 +129,28 @@ static bool drop_view_input(InputEvent* event, void* context) {
 /* ---------- TICK ---------- */
 
 void drop_view_tick(View* view, uint32_t frame) {
+    if(!view) return;
+
     with_view_model(view, DropModel* m, {
+        if(!m) return;
 
         m->now_frame = frame;
 
         uint32_t local = frame - m->phase_start_frame;
 
-        /* countdown -> falling */
+        /* countdown → falling */
         if(m->phase == DropPhaseCountdown && local >= COUNTDOWN_FRAMES) {
             m->phase = DropPhaseFalling;
             m->phase_start_frame = frame;
+            m->anim_frame = 0;
         }
 
-        /* falling -> done */
+        /* animate frames ONLY during falling */
+        if(m->phase == DropPhaseFalling) {
+            m->anim_frame++;
+        }
+
+        /* falling → done */
         if(m->phase == DropPhaseFalling && local >= FALLING_FRAMES) {
             m->phase = DropPhaseDone;
         }
@@ -161,6 +162,8 @@ void drop_view_tick(View* view, uint32_t frame) {
 
 View* drop_view_alloc(void) {
     View* view = view_alloc();
+    if(!view) return NULL;
+
     view_allocate_model(view, ViewModelTypeLocking, sizeof(DropModel));
 
     view_set_draw_callback(view, drop_view_draw);
@@ -170,5 +173,5 @@ View* drop_view_alloc(void) {
 }
 
 void drop_view_free(View* view) {
-    view_free(view);
+    if(view) view_free(view);
 }
