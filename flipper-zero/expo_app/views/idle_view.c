@@ -39,8 +39,19 @@ static bool idle_view_input(InputEvent* event, void* context) {
     return false;
 }
 
-static void idle_view_enter(void* context) { UNUSED(context); }
-static void idle_view_exit(void* context) { UNUSED(context); }
+static void idle_view_enter(void* context) {
+    View* view = context;
+    with_view_model(view, IdleModel* m, {
+        if(m->anim) icon_animation_start(m->anim);
+    }, false);
+}
+
+static void idle_view_exit(void* context) {
+    View* view = context;
+    with_view_model(view, IdleModel* m, {
+        if(m->anim) icon_animation_stop(m->anim);
+    }, false);
+}
 
 void idle_view_tick(View* view, uint32_t frame) {
     with_view_model(view, IdleModel* m, {
@@ -54,7 +65,6 @@ View* idle_view_alloc(void) {
 
     IconAnimation* anim = icon_animation_alloc(&A_idle_128x64);
     view_tie_icon_animation(view, anim);
-    icon_animation_start(anim);
 
     with_view_model(view, IdleModel* m, {
         m->anim = anim;

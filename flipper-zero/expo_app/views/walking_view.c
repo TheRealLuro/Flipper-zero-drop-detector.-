@@ -46,11 +46,17 @@ static bool walking_view_input(InputEvent* event, void* context) {
 /* ---------- LIFECYCLE ---------- */
 
 static void walking_view_enter(void* context) {
-    UNUSED(context);
+    View* view = context;
+    with_view_model(view, WalkModel* m, {
+        if(m->anim) icon_animation_start(m->anim);
+    }, false);
 }
 
 static void walking_view_exit(void* context) {
-    UNUSED(context);
+    View* view = context;
+    with_view_model(view, WalkModel* m, {
+        if(m->anim) icon_animation_stop(m->anim);
+    }, false);
 }
 
 /* ---------- TICK ---------- */
@@ -69,7 +75,6 @@ View* walking_view_alloc(void) {
 
     IconAnimation* anim = icon_animation_alloc(&A_walking_animation_128x64);
     view_tie_icon_animation(view, anim);
-    icon_animation_start(anim);
 
     with_view_model(view, WalkModel* m, {
         m->anim = anim;
