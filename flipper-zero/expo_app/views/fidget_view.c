@@ -43,6 +43,7 @@ View* fidget_view_alloc(void) {
 
     IconAnimation* anim = icon_animation_alloc(&A_fidgeting_128x64);
     view_tie_icon_animation(view, anim);
+    icon_animation_start(anim);
 
     with_view_model(view, FidgetModel* m, {
         m->anim = anim;

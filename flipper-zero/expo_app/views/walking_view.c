@@ -59,6 +59,7 @@ View* walking_view_alloc(void) {
 
     IconAnimation* anim = icon_animation_alloc(&A_walking_animation_128x64);
     view_tie_icon_animation(view, anim);
+    icon_animation_start(anim);
 
     with_view_model(view, WalkModel* m, {
         m->anim = anim;

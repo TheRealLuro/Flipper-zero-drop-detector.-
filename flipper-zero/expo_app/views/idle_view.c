@@ -51,6 +51,7 @@ View* idle_view_alloc(void) {
 
     IconAnimation* anim = icon_animation_alloc(&A_idle_128x64);
     view_tie_icon_animation(view, anim);
+    icon_animation_start(anim);
 
     with_view_model(view, IdleModel* m, {
         m->anim = anim;
