@@ -31,20 +31,6 @@ static bool fidget_view_input(InputEvent* event, void* context) {
     return false;
 }
 
-static void fidget_view_enter(void* context) {
-    View* view = context;
-    with_view_model(view, FidgetModel* m, {
-        if(m->anim) icon_animation_start(m->anim);
-    }, false);
-}
-
-static void fidget_view_exit(void* context) {
-    View* view = context;
-    with_view_model(view, FidgetModel* m, {
-        if(m->anim) icon_animation_stop(m->anim);
-    }, false);
-}
-
 void fidget_view_tick(View* view, uint32_t frame) {
     with_view_model(view, FidgetModel* m, {
         m->frame = frame;
@@ -64,8 +50,6 @@ View* fidget_view_alloc(void) {
 
     view_set_draw_callback(view, fidget_view_draw);
     view_set_input_callback(view, fidget_view_input);
-    view_set_enter_callback(view, fidget_view_enter);
-    view_set_exit_callback(view, fidget_view_exit);
 
     return view;
 }

@@ -28,14 +28,12 @@ extern const Icon A_drop_animation_128x64;
 
 typedef struct {
     DropPhase phase;
-    DropPhase prev_phase;
     uint32_t phase_start_frame;
     uint32_t now_frame;
-
     IconAnimation* anim;
 } DropModel;
 
-/* ---------- MAIN DRAW ---------- */
+/* ---------- DRAW ---------- */
 
 static void drop_view_draw(Canvas* canvas, void* model) {
     DropModel* m = model;
@@ -45,23 +43,19 @@ static void drop_view_draw(Canvas* canvas, void* model) {
     canvas_set_color(canvas, ColorBlack);
 
     switch(m->phase) {
-
     case DropPhaseArming:
         canvas_set_font(canvas, FontPrimary);
         canvas_draw_str(canvas, 20, 10, "DROP MODE");
         break;
-
     case DropPhaseCountdown:
         canvas_set_font(canvas, FontPrimary);
         canvas_draw_str(canvas, 18, 10, "READY");
         break;
-
     case DropPhaseFalling:
         if(m->anim) {
             canvas_draw_icon_animation(canvas, 0, 0, m->anim);
         }
         break;
-
     case DropPhaseDone:
         canvas_set_font(canvas, FontPrimary);
         canvas_draw_str(canvas, 25, 20, "DONE");
@@ -82,10 +76,6 @@ static bool drop_view_input(InputEvent* event, void* context) {
     }
 
     with_view_model(view, DropModel* m, {
-        // OK behavior:
-        // - From ARMING -> start countdown.
-        // - From DONE   -> go back to ARMING.
-        // - During COUNTDOWN/FALLING -> swallow the press, no state change.
         if(m->phase == DropPhaseArming) {
             m->phase = DropPhaseCountdown;
             m->phase_start_frame = m->now_frame;
@@ -98,30 +88,6 @@ static bool drop_view_input(InputEvent* event, void* context) {
     return true;
 }
 
-/* ---------- ENTER / EXIT ---------- */
-
-static void drop_view_enter(void* context) {
-    View* view = context;
-    with_view_model(view, DropModel* m, {
-        m->phase = DropPhaseArming;
-        m->prev_phase = DropPhaseArming;
-        m->phase_start_frame = m->now_frame;
-        if(m->anim) {
-            icon_animation_stop(m->anim);
-        }
-    }, true);
-}
-
-static void drop_view_exit(void* context) {
-    View* view = context;
-    with_view_model(view, DropModel* m, {
-        if(m->anim && m->prev_phase == DropPhaseFalling) {
-            icon_animation_stop(m->anim);
-            m->prev_phase = m->phase;
-        }
-    }, false);
-}
-
 /* ---------- TICK ---------- */
 
 void drop_view_tick(View* view, uint32_t frame) {
@@ -129,7 +95,6 @@ void drop_view_tick(View* view, uint32_t frame) {
 
     with_view_model(view, DropModel* m, {
         m->now_frame = frame;
-
         uint32_t local = frame - m->phase_start_frame;
 
         if(m->phase == DropPhaseCountdown && local >= COUNTDOWN_FRAMES) {
@@ -138,17 +103,6 @@ void drop_view_tick(View* view, uint32_t frame) {
         }
         if(m->phase == DropPhaseFalling && local >= FALLING_FRAMES) {
             m->phase = DropPhaseDone;
-        }
-
-        // Toggle animation only on phase transitions to avoid redundant
-        // start/stop calls (some SDK builds assert on double-start).
-        if(m->anim && m->phase != m->prev_phase) {
-            if(m->phase == DropPhaseFalling) {
-                icon_animation_start(m->anim);
-            } else if(m->prev_phase == DropPhaseFalling) {
-                icon_animation_stop(m->anim);
-            }
-            m->prev_phase = m->phase;
         }
     }, true);
 }
@@ -170,8 +124,6 @@ View* drop_view_alloc(void) {
 
     view_set_draw_callback(view, drop_view_draw);
     view_set_input_callback(view, drop_view_input);
-    view_set_enter_callback(view, drop_view_enter);
-    view_set_exit_callback(view, drop_view_exit);
 
     return view;
 }
