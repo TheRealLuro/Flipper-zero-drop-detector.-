@@ -114,6 +114,7 @@ View* drop_view_alloc(void) {
     if(!view) return NULL;
 
     view_allocate_model(view, ViewModelTypeLocking, sizeof(DropModel));
+    view_set_context(view, view);
 
     IconAnimation* anim = icon_animation_alloc(&A_drop_animation_128x64);
     view_tie_icon_animation(view, anim);
