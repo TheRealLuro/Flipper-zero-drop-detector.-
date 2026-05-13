@@ -19,5 +19,7 @@ App(
         "views/idle_view.c",
         "views/walking_view.c",
         "views/fidget_view.c",
+        "datarecord.c",
+        "driver/ICM42688P.c"
     ],
 )
