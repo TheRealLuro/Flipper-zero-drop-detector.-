@@ -32,10 +32,18 @@ typedef struct DropDetectApp {
     View* walking_view;
     View* fidget_view;
 
+    uint32_t exit_delay_frames;
+
     FuriTimer* anim_timer;
 
     uint32_t frame;
     DropDetectView active_view;
+
+    // Capture state
+    bool capturing;
+    bool capture_started;  // Track if we've started capture for current view
+    uint32_t samples_captured;
+    uint32_t total_samples_to_capture;
 
 } DropDetectApp;
 
