@@ -94,38 +94,32 @@ def build_conv1d_dataset(base_folder):
     return np.array(X, dtype=np.float32), np.array(y, dtype=np.int64)
 
 
+import numpy as np
+
+def train_test_split(X, y, test_ratio=0.2, seed=42):
+
+    rng = np.random.default_rng(seed)
+
+    indices = np.arange(len(X))
+    rng.shuffle(indices)
+
+    split = int(len(X) * (1 - test_ratio))
+
+    train_idx = indices[:split]
+    test_idx = indices[split:]
+
+    X_train = X[train_idx]
+    y_train = y[train_idx]
+
+    X_test = X[test_idx]
+    y_test = y[test_idx]
+
+    return X_train, X_test, y_train, y_test
 
 
-
-def fetch_data():
-    # X and y dataset structure for Conv1D model:
-#
-# X = input data (features)
-# Each X[i] is ONE sample representing a full 2.5 second time window.
-# Shape of X[i] = (250, 4)
-#   - 250 = number of timesteps (100Hz sampling → 2.5 seconds)
-#   - 4 = engineered features per timestep:
-#       [a_mag^2, g_mag^2, accel_jerk, gyro_jerk]
-#
-# So X shape overall = (num_samples, 250, 4)
-#
-# y = labels (targets)
-# Each y[i] corresponds to ONE full 2.5 second window in X[i].
-# Labels:
-#   0 = idle
-#   1 = walking
-#   2 = fidgeting
-#   3 = drop
-#
-# How it is used:
-# The Conv1D model looks at the entire 250-step sequence at once
-# and learns patterns over time (not individual rows).
-# It outputs a single prediction per window (classification of the event).
-#
-# Final mapping:
-# X[i] (250 timesteps of motion) → model → y[i] (single class label)
+def fetch_data(test_ratio=0.2):
     X, y = build_conv1d_dataset("drop_detect")
-    return X, y
+    return train_test_split(X, y, test_ratio=test_ratio)
 
 
 
