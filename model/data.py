@@ -120,7 +120,3 @@ def train_test_split(X, y, test_ratio=0.2, seed=42):
 def fetch_data(test_ratio=0.2):
     X, y = build_conv1d_dataset("drop_detect")
     return train_test_split(X, y, test_ratio=test_ratio)
-
-
-
-
