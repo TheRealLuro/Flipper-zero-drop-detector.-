@@ -10,7 +10,9 @@ App(
     stack_size=2 * 1024,
     fap_category="Tools",
     fap_author="FliPort",
-    fap_version="0.1",
+    fap_weburl="https://github.com/TheRealLuro/Flipper-zero-drop-detector.-",
+    fap_version="0.2",
+    fap_icon="fliport_10px.png",
     fap_description="IMU sample collector (drop/idle/walking/fidget) for offline classifier training",
     fap_icon_assets="images",
     sources=[

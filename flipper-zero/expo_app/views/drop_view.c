@@ -93,6 +93,8 @@ static bool drop_view_input(InputEvent* event, void* context) {
 void drop_view_tick(View* view, uint32_t frame) {
     if(!view) return;
 
+    IconAnimation* restart_anim = NULL;
+
     with_view_model(view, DropModel* m, {
         m->now_frame = frame;
         uint32_t local = frame - m->phase_start_frame;
@@ -100,11 +102,32 @@ void drop_view_tick(View* view, uint32_t frame) {
         if(m->phase == DropPhaseCountdown && local >= COUNTDOWN_FRAMES) {
             m->phase = DropPhaseFalling;
             m->phase_start_frame = frame;
-        }
-        if(m->phase == DropPhaseFalling && local >= FALLING_FRAMES) {
+            restart_anim = m->anim;
+        } else if(m->phase == DropPhaseFalling && local >= FALLING_FRAMES) {
             m->phase = DropPhaseDone;
         }
     }, true);
+
+    if(restart_anim) {
+        icon_animation_start(restart_anim);
+    }
+}
+
+void drop_view_reset(View* view) {
+    if(!view) return;
+
+    IconAnimation* anim_to_restart = NULL;
+
+    with_view_model(view, DropModel* m, {
+        m->phase = DropPhaseArming;
+        m->phase_start_frame = 0;
+        m->now_frame = 0;
+        anim_to_restart = m->anim;
+    }, true);
+
+    if(anim_to_restart) {
+        icon_animation_start(anim_to_restart);
+    }
 }
 
 /* ---------- ALLOC ---------- */

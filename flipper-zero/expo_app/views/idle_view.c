@@ -45,6 +45,21 @@ void idle_view_tick(View* view, uint32_t frame) {
     }, true);
 }
 
+void idle_view_reset(View* view) {
+    if(!view) return;
+
+    IconAnimation* anim_to_restart = NULL;
+
+    with_view_model(view, IdleModel* m, {
+        m->frame = 0;
+        anim_to_restart = m->anim;
+    }, true);
+
+    if(anim_to_restart) {
+        icon_animation_start(anim_to_restart);
+    }
+}
+
 View* idle_view_alloc(void) {
     View* view = view_alloc();
     view_allocate_model(view, ViewModelTypeLocking, sizeof(IdleModel));

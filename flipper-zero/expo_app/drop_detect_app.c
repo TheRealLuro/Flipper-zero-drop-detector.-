@@ -90,23 +90,29 @@ void drop_detect_app_request_view(DropDetectApp* app, DropDetectView view) {
         capture_cancel();
     }
 
-
-    // Reset capture state for new view entry
+    // Reset capture + per-view timer state so each menu entry starts fresh.
     app->capture_started = false;
     app->exit_delay_frames = 0;
-    // Don't reset frame here - let the anim tick handle it naturally
-    
+    app->frame = 0;
+
     // Set the active view BEFORE switching to ensure proper callback handling
     DropDetectView old_view = app->active_view;
     app->active_view = view;
 
-    FURI_LOG_I(TAG, "about to switch view...");
+    // Reset the per-view model + restart icon animations so visuals begin
+    // from frame 0 on every entry.
+    switch(view) {
+    case DropDetectViewDrop:    drop_view_reset(app->drop_view);       break;
+    case DropDetectViewIdle:    idle_view_reset(app->idle_view);       break;
+    case DropDetectViewWalking: walking_view_reset(app->walking_view); break;
+    case DropDetectViewFidget:  fidget_view_reset(app->fidget_view);   break;
+    default: break;
+    }
+
     view_dispatcher_switch_to_view(app->view_dispatcher, view);
-    FURI_LOG_I(TAG, "view switched");
 
     // Start capture for data recording views
-    if(old_view == DropDetectViewSubmenu) {
-        FURI_LOG_I(TAG, "came from submenu, starting capture");
+    if(old_view == DropDetectViewSubmenu && view != DropDetectViewSubmenu) {
         drop_detect_start_capture(app);
     }
 }
@@ -236,7 +242,12 @@ static void drop_detect_anim_tick(void* context) {
     DropDetectApp* app = context;
     if(!app) return;
 
-    FURI_LOG_I(TAG, "anim tick frame=%lu", app->frame);
+    // Skip work entirely while sitting on the submenu — it handles its own redraw
+    // and burning cycles here just delays input handling.
+    if(app->active_view == DropDetectViewSubmenu) {
+        return;
+    }
+
     app->frame++;
 
     switch(app->active_view) {
@@ -255,8 +266,6 @@ static void drop_detect_anim_tick(void* context) {
         default:
             break;
     }
-
-    FURI_LOG_I(TAG, "capture_done=%d", capture_is_done());
 
     if(app->capturing && app->capture_started && capture_is_done()) {
         app->capturing = false;

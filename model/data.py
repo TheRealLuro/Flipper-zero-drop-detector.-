@@ -45,21 +45,20 @@ def build_conv1d_dataset(base_folder):
 
             path = os.path.join(folder, file)
 
-            # ---------- STEP 1: load CSV ----------
+    
             with open(path, "r") as f:
                 reader = csv.reader(f)
                 rows = list(reader)
 
-            # remove header if needed
-            # skip empty files
+
             if not rows or not rows[0]:
                 continue
 
-            # skip header safely
+    
             if rows[0][0].lower() == "order":
                 rows = rows[1:]
 
-            # need full window
+           
             if len(rows) < WINDOW:
                 continue
 
@@ -120,3 +119,7 @@ def train_test_split(X, y, test_ratio=0.2, seed=42):
 def fetch_data(test_ratio=0.2):
     X, y = build_conv1d_dataset("drop_detect")
     return train_test_split(X, y, test_ratio=test_ratio)
+
+
+
+print(fetch_data())
