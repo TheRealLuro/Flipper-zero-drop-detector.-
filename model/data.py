@@ -6,11 +6,12 @@ import numpy as np
 label_map = {
     "idle": 0,
     "walking": 1,
-    "fidgeting": 2,
+    "fidget": 2,
     "drop": 3
 }
 
 WINDOW = 250
+STRIDE = 125
 FEATURES = 4
 
 
@@ -62,38 +63,27 @@ def build_conv1d_dataset(base_folder):
             if len(rows) < WINDOW:
                 continue
 
-            rows = rows[:WINDOW]
+            for start in range(0, len(rows) - WINDOW + 1, STRIDE):
+                window = rows[start:start + WINDOW]
+                sample = []
+                for t in range(1, WINDOW):
+                    ax, ay, az = map(float, window[t][1:4])
+                    gx, gy, gz = map(float, window[t][4:7])
+                    axp, ayp, azp = map(float, window[t-1][1:4])
+                    gxp, gyp, gzp = map(float, window[t-1][4:7])
 
-            
-            sample = []
+                    a = a_mag(ax, ay, az)
+                    g = g_mag(gx, gy, gz)
+                    a_prev = a_mag(axp, ayp, azp)
+                    g_prev = g_mag(gxp, gyp, gzp)
 
-            for t in range(1, WINDOW):
+                    sample.append([a, g, a - a_prev, g - g_prev])
 
-                ax, ay, az = map(float, rows[t][1:4])
-                gx, gy, gz = map(float, rows[t][4:7])
-
-                axp, ayp, azp = map(float, rows[t-1][1:4])
-                gxp, gyp, gzp = map(float, rows[t-1][4:7])
-
-                a = a_mag(ax, ay, az)
-                g = g_mag(gx, gy, gz)
-
-                a_prev = a_mag(axp, ayp, azp)
-                g_prev = g_mag(gxp, gyp, gzp)
-
-                ja = a - a_prev
-                jg = g - g_prev
-
-                sample.append([a, g, ja, jg])
-
-        
-            X.append(sample)
-            y.append(label)
+                X.append(sample)
+                y.append(label)
 
     return np.array(X, dtype=np.float32), np.array(y, dtype=np.int64)
 
-
-import numpy as np
 
 def train_test_split(X, y, test_ratio=0.2, seed=42):
 
@@ -122,4 +112,17 @@ def fetch_data(test_ratio=0.2):
 
 
 
-print(fetch_data())
+def save_bin(path, X, y):
+    # Header: [N, timesteps, features] as int32, then X as float32, y as int32
+    N, T, F = X.shape
+    with open(path, "wb") as f:
+        np.array([N, T, F], dtype=np.int32).tofile(f)
+        X.astype(np.float32).tofile(f)
+        y.astype(np.int32).tofile(f)
+
+
+if __name__ == "__main__":
+    X_train, X_test, y_train, y_test = fetch_data()
+    save_bin("TRAIN.bin", X_train, y_train)
+    save_bin("TEST.bin", X_test, y_test)
+    print(f"Saved TRAIN.bin: {X_train.shape}, TEST.bin: {X_test.shape}")

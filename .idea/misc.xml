@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Black">
+    <option name="sdkName" value="Python 3.11 (Flipper-zero-drop-detector.-)" />
+  </component>
+  <component name="CompDBSettings">
+    <option name="linkedExternalProjectsSettings">
+      <CompDBProjectSettings>
+        <option name="externalProjectPath" value="$PROJECT_DIR$/flipper-zero/expo_app" />
+        <option name="modules">
+          <set>
+            <option value="$PROJECT_DIR$/flipper-zero/expo_app" />
+          </set>
+        </option>
+      </CompDBProjectSettings>
+    </option>
+  </component>
+  <component name="CompDBWorkspace" PROJECT_DIR="$PROJECT_DIR$/flipper-zero/expo_app">
+    <contentRoot DIR="$PROJECT_DIR$" />
+  </component>
+  <component name="ExternalStorageConfigurationManager" enabled="true" />
+</project>
