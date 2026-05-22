@@ -1,6 +1,6 @@
 #define BT_MAX_LAYERS 32
 #define BT_L_MAX_DIMS 3
-#include <stdint.h>
+#include <cstdint>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -567,9 +567,9 @@ int main() {
 
     Layers::Sequential model(FP32);
     model.add<Layers::GlobalAveragePooling1D>(FP32)
-         .add<Layers::Dense>(CHANNELS, 32, FP32)
+         .add<Layers::Dense>(CHANNELS, 256, FP32)
          .add<Layers::ReLU>()
-         .add<Layers::Dense>(32, NUM_CLASSES, FP32)
+         .add<Layers::Dense>(256, NUM_CLASSES, FP32)
          .add<Layers::Softmax>(FP32);
     model.summary();
     printf("Model size: %zu bytes\n\n", model.get_bytes());

@@ -113,6 +113,7 @@ def fetch_data(test_ratio=0.2):
 
 
 def save_bin(path, X, y):
+    print(X.shape)
     # Header: [N, timesteps, features] as int32, then X as float32, y as int32
     N, T, F = X.shape
     with open(path, "wb") as f:
