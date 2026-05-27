@@ -24,6 +24,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -133,6 +134,9 @@ struct AppState {
     int  runs_selected        = -1;            // currently selected row in the runs table
     bool runs_refresh         = true;          // request re-scan on next render
     float runs_last_scan      = -1e9f;         // throttle filesystem scans
+
+    // Per-card collapse state (id -> collapsed). Persists for the session.
+    std::unordered_map<std::string, bool> card_collapsed;
 };
 
 // Filled in by train_loop so worker_train can archive these to a run folder.
@@ -713,11 +717,15 @@ static double json_double_field(const std::string& json,
                                  const std::string& obj_key,
                                  const std::string& field,
                                  double dflt) {
-    const std::string obj_marker = "\"" + obj_key + "\"";
-    size_t o = json.find(obj_marker);
-    if (o == std::string::npos) return dflt;
+    size_t search_from = 0;
+    if (!obj_key.empty() && obj_key != "<root>") {
+        const std::string obj_marker = "\"" + obj_key + "\"";
+        size_t o = json.find(obj_marker);
+        if (o == std::string::npos) return dflt;
+        search_from = o;
+    }
     const std::string field_marker = "\"" + field + "\"";
-    size_t k = json.find(field_marker, o);
+    size_t k = json.find(field_marker, search_from);
     if (k == std::string::npos) return dflt;
     size_t colon = json.find(':', k);
     if (colon == std::string::npos) return dflt;
@@ -819,6 +827,69 @@ static void section_header(const char* label) {
     ImGui::TextUnformatted(label);
     if (g_font_h2) ImGui::PopFont();
     ImGui::Spacing();
+}
+
+// Clickable card header. Toggles collapse state for the card identified by `id`.
+// Returns true when the card body should be rendered (i.e. card is expanded).
+//   card_begin("##my");
+//   if (card_header(s, "##my", "Title")) { ...body... }
+//   card_end();
+static bool card_header(AppState& s, const char* id, const char* label) {
+    // Cards default to collapsed on first touch; subsequent toggles persist for the session.
+    auto it = s.card_collapsed.find(id);
+    if (it == s.card_collapsed.end()) s.card_collapsed.emplace(id, true);
+    bool& collapsed = s.card_collapsed[id];
+    const float scale = g_dpi_scale;
+
+    // Inner content width inside the card (we're already inside the card child).
+    float avail_w = ImGui::GetContentRegionAvail().x;
+    if (g_font_h2) ImGui::PushFont(g_font_h2);
+    float row_h = ImGui::GetTextLineHeight() + 8.0f * scale;
+    if (g_font_h2) ImGui::PopFont();
+
+    ImVec2 row_tl = ImGui::GetCursorScreenPos();
+    ImVec2 row_br(row_tl.x + avail_w, row_tl.y + row_h);
+
+    ImGui::PushID(id);
+    bool clicked = ImGui::InvisibleButton("##cardh", ImVec2(avail_w, row_h));
+    bool hovered = ImGui::IsItemHovered();
+    ImGui::PopID();
+    if (clicked) collapsed = !collapsed;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (hovered) {
+        dl->AddRectFilled(row_tl, row_br, IM_COL32(255, 255, 255, 14), 6.0f * scale);
+    }
+
+    // Chevron triangle (right when collapsed, down when expanded).
+    const ImU32 chev_col = IM_COL32(170, 180, 200, 255);
+    const float cs = 5.0f * scale;
+    ImVec2 cc(row_tl.x + 10.0f * scale, row_tl.y + row_h * 0.5f);
+    if (collapsed) {
+        dl->AddTriangleFilled(
+            ImVec2(cc.x - cs * 0.6f, cc.y - cs),
+            ImVec2(cc.x - cs * 0.6f, cc.y + cs),
+            ImVec2(cc.x + cs * 0.9f, cc.y),
+            chev_col);
+    } else {
+        dl->AddTriangleFilled(
+            ImVec2(cc.x - cs,        cc.y - cs * 0.6f),
+            ImVec2(cc.x + cs,        cc.y - cs * 0.6f),
+            ImVec2(cc.x,             cc.y + cs * 0.9f),
+            chev_col);
+    }
+
+    // Title label
+    if (g_font_h2) ImGui::PushFont(g_font_h2);
+    float text_h = ImGui::GetTextLineHeight();
+    ImVec2 text_pos(row_tl.x + 30.0f * scale, row_tl.y + (row_h - text_h) * 0.5f);
+    dl->AddText(text_pos, IM_COL32(225, 228, 234, 255), label);
+    if (g_font_h2) ImGui::PopFont();
+
+    // Reserve the row height for following content / spacing.
+    if (!collapsed) ImGui::Dummy(ImVec2(0, 4.0f * scale));
+
+    return !collapsed;
 }
 
 // Card container -- visually groups a set of widgets in a slightly raised panel.
@@ -1273,24 +1344,26 @@ static void render_build_tab(AppState& s) {
     tab_layout(s,
         [&] {
             card_begin("##build_inputs");
-            section_header("Inputs");
-            labeled_path("##b_src",   "Source folder",  s.build_src,   sizeof(s.build_src),   PickKind::Folder);
-            labeled_path("##b_train", "Output train",   s.build_train, sizeof(s.build_train), PickKind::FileSave, "Binary dataset\0*.bin\0All files\0*.*\0");
-            labeled_path("##b_test",  "Output test",    s.build_test,  sizeof(s.build_test),  PickKind::FileSave, "Binary dataset\0*.bin\0All files\0*.*\0");
-            labeled_int ("##b_pct",   "Test split (%)", &s.build_test_pct, 5, 25);
-            labeled_int ("##b_seed",  "Random seed",    &s.build_seed,  1, 10);
+            if (card_header(s, "##build_inputs", "Inputs")) {
+                labeled_path("##b_src",   "Source folder",  s.build_src,   sizeof(s.build_src),   PickKind::Folder);
+                labeled_path("##b_train", "Output train",   s.build_train, sizeof(s.build_train), PickKind::FileSave, "Binary dataset\0*.bin\0All files\0*.*\0");
+                labeled_path("##b_test",  "Output test",    s.build_test,  sizeof(s.build_test),  PickKind::FileSave, "Binary dataset\0*.bin\0All files\0*.*\0");
+                labeled_int ("##b_pct",   "Test split (%)", &s.build_test_pct, 5, 25);
+                labeled_int ("##b_seed",  "Random seed",    &s.build_seed,  1, 10);
+            }
             card_end();
         },
         [&] { run_button(s, "Build dataset", [&s] { worker_build_dataset(s); }); },
         [&] {
             card_begin("##build_status");
-            section_header("Source files");
-            status_grid_2x2([&](int c, char* buf, size_t buf_n) {
-                int n = count_csvs(fs::path(s.build_src) / dataset_build::CLASS_NAMES[c]);
-                if (n < 0) std::snprintf(buf, buf_n, "%-7s  --",     dataset_build::CLASS_NAMES[c]);
-                else       std::snprintf(buf, buf_n, "%-7s  %d csv", dataset_build::CLASS_NAMES[c], n);
-                return n > 0;
-            });
+            if (card_header(s, "##build_status", "Source files")) {
+                status_grid_2x2([&](int c, char* buf, size_t buf_n) {
+                    int n = count_csvs(fs::path(s.build_src) / dataset_build::CLASS_NAMES[c]);
+                    if (n < 0) std::snprintf(buf, buf_n, "%-7s  --",     dataset_build::CLASS_NAMES[c]);
+                    else       std::snprintf(buf, buf_n, "%-7s  %d csv", dataset_build::CLASS_NAMES[c], n);
+                    return n > 0;
+                });
+            }
             card_end();
         });
 }
@@ -1299,57 +1372,60 @@ static void render_train_tab(AppState& s) {
     tab_layout(s,
         [&] {
             card_begin("##train_inputs");
-            section_header("Inputs");
-            labeled_path ("##t_train", "TRAIN.bin",     s.train_train_bin, sizeof(s.train_train_bin), PickKind::FileOpen, "Binary dataset\0*.bin\0All files\0*.*\0");
-            labeled_path ("##t_test",  "TEST.bin",      s.train_test_bin,  sizeof(s.train_test_bin),  PickKind::FileOpen, "Binary dataset\0*.bin\0All files\0*.*\0");
-            labeled_path ("##t_out",   "Output JSON",   s.train_model_out, sizeof(s.train_model_out), PickKind::FileSave, "JSON model\0*.json\0All files\0*.*\0");
-            labeled_int  ("##t_ep",    "Epochs",        &s.train_epochs, 1, 5);
-            labeled_float("##t_lr",    "Learning rate", &s.train_lr, 0.0005f, 0.005f, "%.4f");
-            labeled_text ("##t_note",  "Run note (optional)", s.train_note, sizeof(s.train_note));
+            if (card_header(s, "##train_inputs", "Inputs")) {
+                labeled_path ("##t_train", "TRAIN.bin",     s.train_train_bin, sizeof(s.train_train_bin), PickKind::FileOpen, "Binary dataset\0*.bin\0All files\0*.*\0");
+                labeled_path ("##t_test",  "TEST.bin",      s.train_test_bin,  sizeof(s.train_test_bin),  PickKind::FileOpen, "Binary dataset\0*.bin\0All files\0*.*\0");
+                labeled_path ("##t_out",   "Output JSON",   s.train_model_out, sizeof(s.train_model_out), PickKind::FileSave, "JSON model\0*.json\0All files\0*.*\0");
+                labeled_int  ("##t_ep",    "Epochs",        &s.train_epochs, 1, 5);
+                labeled_float("##t_lr",    "Learning rate", &s.train_lr, 0.0005f, 0.005f, "%.4f");
+                labeled_text ("##t_note",  "Run note (optional)", s.train_note, sizeof(s.train_note));
+            }
             card_end();
         },
         [&] { run_button(s, "Train model", [&s] { worker_train(s); }); },
         [&] {
             // ---- Architecture card ----
             card_begin("##train_arch");
-            section_header("Architecture");
-            labeled_int("##a_conv_ch", "Conv1D channels (output)", &s.arch_conv_channels, 1, 4);
-            labeled_int("##a_k",       "Conv1D kernel size",       &s.arch_conv_kernel,   2, 2);
-            labeled_int("##a_s",       "Conv1D stride",            &s.arch_conv_stride,   1, 1);
-            labeled_int("##a_hl",      "Hidden Dense layers",      &s.arch_hidden_layers, 1, 1);
-            if (s.arch_hidden_layers > 0)
-                labeled_int("##a_hu",  "Units per hidden layer",   &s.arch_hidden_units,  4, 8);
-            // Clamp to sane ranges so users can't enter garbage that crashes the model builder.
-            s.arch_conv_channels = std::clamp(s.arch_conv_channels, 2,  64);
-            s.arch_conv_kernel   = std::clamp(s.arch_conv_kernel,   2,  21);
-            s.arch_conv_stride   = std::clamp(s.arch_conv_stride,   1,  16);
-            s.arch_hidden_layers = std::clamp(s.arch_hidden_layers, 0,   3);
-            s.arch_hidden_units  = std::clamp(s.arch_hidden_units,  2, 256);
-            {
-                // Footprint readout: # params, useful for keeping the Flipper budget in mind.
-                uint32_t T_in = 249;  // training window length
-                uint32_t L_out = (s.arch_conv_kernel <= T_in) ? (T_in - s.arch_conv_kernel) / std::max(1, s.arch_conv_stride) + 1 : 0u;
-                long long conv_p = 4LL * s.arch_conv_channels * s.arch_conv_kernel + s.arch_conv_channels;
-                long long prev = s.arch_conv_channels;
-                long long dense_p = 0;
-                for (int i = 0; i < s.arch_hidden_layers; i++) {
-                    dense_p += prev * s.arch_hidden_units + s.arch_hidden_units;
-                    prev = s.arch_hidden_units;
+            if (card_header(s, "##train_arch", "Architecture")) {
+                labeled_int("##a_conv_ch", "Conv1D channels (output)", &s.arch_conv_channels, 1, 4);
+                labeled_int("##a_k",       "Conv1D kernel size",       &s.arch_conv_kernel,   2, 2);
+                labeled_int("##a_s",       "Conv1D stride",            &s.arch_conv_stride,   1, 1);
+                labeled_int("##a_hl",      "Hidden Dense layers",      &s.arch_hidden_layers, 1, 1);
+                if (s.arch_hidden_layers > 0)
+                    labeled_int("##a_hu",  "Units per hidden layer",   &s.arch_hidden_units,  4, 8);
+                // Clamp to sane ranges so users can't enter garbage that crashes the model builder.
+                s.arch_conv_channels = std::clamp(s.arch_conv_channels, 2,  64);
+                s.arch_conv_kernel   = std::clamp(s.arch_conv_kernel,   2,  21);
+                s.arch_conv_stride   = std::clamp(s.arch_conv_stride,   1,  16);
+                s.arch_hidden_layers = std::clamp(s.arch_hidden_layers, 0,   3);
+                s.arch_hidden_units  = std::clamp(s.arch_hidden_units,  2, 256);
+                {
+                    // Footprint readout: # params, useful for keeping the Flipper budget in mind.
+                    uint32_t T_in = 249;
+                    uint32_t L_out = (s.arch_conv_kernel <= T_in) ? (T_in - s.arch_conv_kernel) / std::max(1, s.arch_conv_stride) + 1 : 0u;
+                    long long conv_p = 4LL * s.arch_conv_channels * s.arch_conv_kernel + s.arch_conv_channels;
+                    long long prev = s.arch_conv_channels;
+                    long long dense_p = 0;
+                    for (int i = 0; i < s.arch_hidden_layers; i++) {
+                        dense_p += prev * s.arch_hidden_units + s.arch_hidden_units;
+                        prev = s.arch_hidden_units;
+                    }
+                    dense_p += prev * 4 + 4;
+                    long long total = conv_p + dense_p;
+                    ImGui::PushStyleColor(ImGuiCol_Text, rgb(140, 150, 170));
+                    ImGui::Text("Params: %lld  ~ %lld bytes (FP32)", total, total * 4);
+                    ImGui::Text("Conv1D out length: %u", L_out);
+                    ImGui::PopStyleColor();
                 }
-                dense_p += prev * 4 + 4;  // output Dense -> NUM_CLASSES=4
-                long long total = conv_p + dense_p;
-                ImGui::PushStyleColor(ImGuiCol_Text, rgb(140, 150, 170));
-                ImGui::Text("Params: %lld  ~ %lld bytes (FP32)", total, total * 4);
-                ImGui::Text("Conv1D out length: %u", L_out);
-                ImGui::PopStyleColor();
             }
             card_end();
 
             // ---- Required files ----
             card_begin("##train_status");
-            section_header("Required files");
-            status_mark(fs::is_regular_file(s.train_train_bin), s.train_train_bin);
-            status_mark(fs::is_regular_file(s.train_test_bin),  s.train_test_bin);
+            if (card_header(s, "##train_status", "Required files")) {
+                status_mark(fs::is_regular_file(s.train_train_bin), s.train_train_bin);
+                status_mark(fs::is_regular_file(s.train_test_bin),  s.train_test_bin);
+            }
             card_end();
         });
 }
@@ -1358,19 +1434,21 @@ static void render_predict_tab(AppState& s) {
     tab_layout(s,
         [&] {
             card_begin("##pred_inputs");
-            section_header("Inputs");
-            labeled_path("##p_csv",   "CSV path",   s.predict_csv,       sizeof(s.predict_csv),       PickKind::FileOpen, "CSV files\0*.csv\0All files\0*.*\0");
-            labeled_path("##p_model", "model.json", s.predict_model,     sizeof(s.predict_model),     PickKind::FileOpen, "JSON model\0*.json\0All files\0*.*\0");
-            labeled_path("##p_train", "TRAIN.bin",  s.predict_train_bin, sizeof(s.predict_train_bin), PickKind::FileOpen, "Binary dataset\0*.bin\0All files\0*.*\0");
+            if (card_header(s, "##pred_inputs", "Inputs")) {
+                labeled_path("##p_csv",   "CSV path",   s.predict_csv,       sizeof(s.predict_csv),       PickKind::FileOpen, "CSV files\0*.csv\0All files\0*.*\0");
+                labeled_path("##p_model", "model.json", s.predict_model,     sizeof(s.predict_model),     PickKind::FileOpen, "JSON model\0*.json\0All files\0*.*\0");
+                labeled_path("##p_train", "TRAIN.bin",  s.predict_train_bin, sizeof(s.predict_train_bin), PickKind::FileOpen, "Binary dataset\0*.bin\0All files\0*.*\0");
+            }
             card_end();
         },
         [&] { run_button(s, "Run predict", [&s] { worker_predict(s); }); },
         [&] {
             card_begin("##pred_status");
-            section_header("Required files");
-            status_mark(fs::is_regular_file(s.predict_csv),       s.predict_csv[0] ? s.predict_csv : "(no CSV selected)");
-            status_mark(fs::is_regular_file(s.predict_model),     s.predict_model);
-            status_mark(fs::is_regular_file(s.predict_train_bin), s.predict_train_bin);
+            if (card_header(s, "##pred_status", "Required files")) {
+                status_mark(fs::is_regular_file(s.predict_csv),       s.predict_csv[0] ? s.predict_csv : "(no CSV selected)");
+                status_mark(fs::is_regular_file(s.predict_model),     s.predict_model);
+                status_mark(fs::is_regular_file(s.predict_train_bin), s.predict_train_bin);
+            }
             card_end();
         });
 }
@@ -1386,7 +1464,7 @@ static void render_tune_tab(AppState& s) {
     tab_layout(s,
         [&] {
             card_begin("##tune_inputs");
-            section_header("Inputs");
+            if (card_header(s, "##tune_inputs", "Inputs")) {
 
             // Two sub-columns: paths on the left (need width), hyperparams + checkbox on the right.
             float avail_w = ImGui::GetContentRegionAvail().x;
@@ -1422,6 +1500,7 @@ static void render_tune_tab(AppState& s) {
                 ImGui::Checkbox("Keep old", &s.tune_keep_old);
                 ImGui::EndChild();
             }
+            }  // end of if (card_header ... Inputs)
             card_end();
         },
         [&] {
@@ -1431,13 +1510,14 @@ static void render_tune_tab(AppState& s) {
         },
         [&] {
             card_begin("##tune_user");
-            section_header("User data");
+            if (card_header(s, "##tune_user", "User data")) {
             status_grid_2x2([&](int c, char* buf, size_t buf_n) {
                 int n = count_csvs(fs::path(s.tune_user_dir) / dataset_build::CLASS_NAMES[c]);
                 if (n < 0) std::snprintf(buf, buf_n, "%-7s  --",     dataset_build::CLASS_NAMES[c]);
                 else       std::snprintf(buf, buf_n, "%-7s  %d csv", dataset_build::CLASS_NAMES[c], n);
                 return n > 0;
             });
+            }
             card_end();
         });
 }
@@ -1457,17 +1537,18 @@ static void render_runs_tab(AppState& s) {
 
     // ---- Folder input + Refresh ----
     card_begin("##runs_inputs");
-    section_header("Run archive");
-    labeled_path("##runs_dir", "Folder", s.runs_dir, sizeof(s.runs_dir), PickKind::Folder);
-    if (ImGui::Button("Refresh", ImVec2(110.0f * scale, 0))) s.runs_refresh = true;
-    ImGui::SameLine();
-    ImGui::TextDisabled("(%zu run%s)", runs_cache.size(), runs_cache.size() == 1 ? "" : "s");
+    if (card_header(s, "##runs_inputs", "Run archive")) {
+        labeled_path("##runs_dir", "Folder", s.runs_dir, sizeof(s.runs_dir), PickKind::Folder);
+        if (ImGui::Button("Refresh", ImVec2(110.0f * scale, 0))) s.runs_refresh = true;
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%zu run%s)", runs_cache.size(), runs_cache.size() == 1 ? "" : "s");
+    }
     card_end();
     ImGui::Dummy(ImVec2(0, 6.0f * scale));
 
     // ---- Table ----
     card_begin("##runs_table");
-    section_header("Past runs");
+    if (card_header(s, "##runs_table", "Past runs")) {
     if (runs_cache.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, rgb(140, 150, 170));
         ImGui::TextWrapped("No runs archived yet. Train a model on the Train tab and "
@@ -1529,21 +1610,39 @@ static void render_runs_tab(AppState& s) {
             ImGui::EndTable();
         }
     }
+    }  // end of if (card_header ... Past runs)
     card_end();
 
     // ---- Action buttons for the selected row ----
     if (s.runs_selected >= 0 && s.runs_selected < (int)runs_cache.size()) {
         const RunInfo& r = runs_cache[s.runs_selected];
         ImGui::Dummy(ImVec2(0, 4.0f * scale));
-        if (ImGui::Button("Load as current model", ImVec2(220.0f * scale, 0))) {
+        if (ImGui::Button("Use as current model", ImVec2(220.0f * scale, 0))) {
+            // Copy the selected run's model.json over Train's output path AND every
+            // other tab's "input model" path, so the choice propagates everywhere.
             fs::path src = r.folder / "model.json";
             fs::path dst = fs::path(s.train_model_out);
             std::error_code ec;
+            fs::create_directories(dst.parent_path(), ec); ec.clear();
             fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
-            if (ec) s.log.logf("Could not copy %s -> %s: %s\n",
-                               src.string().c_str(), dst.string().c_str(), ec.message().c_str());
-            else    s.log.logf("Loaded %s as %s\n",
-                               src.string().c_str(), dst.string().c_str());
+            if (ec) {
+                s.log.logf("Could not copy %s -> %s: %s\n",
+                           src.string().c_str(), dst.string().c_str(), ec.message().c_str());
+            } else {
+                // Sync the Predict + Tune tab path fields so they all point at the same file.
+                std::strncpy(s.predict_model,   dst.string().c_str(), sizeof(s.predict_model)   - 1);
+                std::strncpy(s.tune_model_in,   dst.string().c_str(), sizeof(s.tune_model_in)   - 1);
+                s.predict_model[sizeof(s.predict_model) - 1] = '\0';
+                s.tune_model_in[sizeof(s.tune_model_in) - 1] = '\0';
+                // Also sync the arch fields from this run so the Train tab's controls reflect it.
+                s.arch_conv_channels = (int)r.arch.conv_channels;
+                s.arch_conv_kernel   = (int)r.arch.conv_kernel;
+                s.arch_conv_stride   = (int)r.arch.conv_stride;
+                s.arch_hidden_layers = (int)r.arch.hidden_layers;
+                s.arch_hidden_units  = (int)r.arch.hidden_units;
+                s.log.logf("Loaded run %s -> %s  (predict + tune now point here)\n",
+                           r.folder.filename().string().c_str(), dst.string().c_str());
+            }
         }
         ImGui::SameLine();
         if (ImGui::Button("Delete run", ImVec2(140.0f * scale, 0))) {

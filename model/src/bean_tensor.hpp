@@ -880,16 +880,21 @@ static void tensor_assign_flat(Tensors::Tensor& t, const std::vector<float>& src
 }
 
 // Reads a single integer field from `"<obj_key>": { ... "<field>": N ... }` in JSON.
+// Pass obj_key = "<root>" (or "") to read a top-level field.
 // Returns `dflt` if the object or field isn't present.
 static int json_int_field(const std::string& json,
                           const std::string& obj_key,
                           const std::string& field,
                           int dflt) {
-    const std::string obj_marker = "\"" + obj_key + "\"";
-    size_t o = json.find(obj_marker);
-    if (o == std::string::npos) return dflt;
+    size_t search_from = 0;
+    if (!obj_key.empty() && obj_key != "<root>") {
+        const std::string obj_marker = "\"" + obj_key + "\"";
+        size_t o = json.find(obj_marker);
+        if (o == std::string::npos) return dflt;
+        search_from = o;
+    }
     const std::string field_marker = "\"" + field + "\"";
-    size_t k = json.find(field_marker, o);
+    size_t k = json.find(field_marker, search_from);
     if (k == std::string::npos) return dflt;
     size_t colon = json.find(':', k);
     if (colon == std::string::npos) return dflt;
