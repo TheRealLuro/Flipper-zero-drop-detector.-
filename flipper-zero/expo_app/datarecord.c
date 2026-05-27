@@ -1,6 +1,6 @@
 #include <furi.h>
 #include <string.h>
-#include "../applications/services/storage/storage.h"
+#include <storage/storage.h>
 #include "driver/ICM42688P.h"
 
 #define TAG "datarecord"
