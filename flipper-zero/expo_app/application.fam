@@ -13,7 +13,7 @@ App(
     fap_weburl="https://github.com/TheRealLuro/Flipper-zero-drop-detector.-",
     fap_version="0.3",
     fap_icon="fliport_10px.png",
-    fap_description="IMU sample collector (drop/idle/walking/fidget) for offline classifier training",
+    fap_description="IMU drop / idle / walking / fidget sample collector for training a Flipper-side motion classifier.",
     fap_icon_assets="images",
     sources=[
         "drop_detect_app.c",
