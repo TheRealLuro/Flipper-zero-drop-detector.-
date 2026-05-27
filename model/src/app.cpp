@@ -93,11 +93,14 @@ struct AppState {
     Tab active_tab = Tab::Build;
 
     // Build dataset tab
-    char build_src[260]   = "data\\drop_detect";
-    char build_train[260] = "data\\TRAIN.bin";
-    char build_test[260]  = "data\\TEST.bin";
-    int  build_test_pct   = 20;
-    int  build_seed       = 42;
+    char build_src[260]      = "data\\drop_detect";
+    char build_train[260]    = "data\\TRAIN.bin";
+    char build_test[260]     = "data\\TEST.bin";
+    int  build_test_pct      = 20;
+    int  build_seed          = 42;
+    bool build_stride_auto   = true;   // per-file stride = (rows-250)/(target-1), clamped
+    int  build_stride        = 125;    // used only when auto is off
+    int  build_target_wins   = 30;     // target windows per file when auto
 
     // Train tab
     char train_train_bin[260] = "data\\TRAIN.bin";
@@ -119,6 +122,9 @@ struct AppState {
     char predict_csv[1024]      = "";
     char predict_model[260]     = "data\\model.json";
     char predict_train_bin[260] = "data\\TRAIN.bin";
+    bool predict_stride_auto    = true; // per-file stride aimed at ~target windows
+    int  predict_stride         = 25;   // manual override when auto is off
+    int  predict_target_wins    = 30;   // target windows per file when auto
 
     // Tune tab
     char tune_user_dir[260]   = "data\\user_data";
@@ -134,6 +140,10 @@ struct AppState {
     int  runs_selected        = -1;            // currently selected row in the runs table
     bool runs_refresh         = true;          // request re-scan on next render
     float runs_last_scan      = -1e9f;         // throttle filesystem scans
+    // Inline confirmation banner ("Loaded ...") shown for runs_msg_until_sec on the Runs tab.
+    std::string runs_msg;
+    bool        runs_msg_ok        = true;     // green vs red banner
+    double      runs_msg_until_sec = 0.0;      // monotonic seconds (ImGui::GetTime) when the banner expires
 
     // Per-card collapse state (id -> collapsed). Persists for the session.
     std::unordered_map<std::string, bool> card_collapsed;
@@ -229,17 +239,33 @@ static void stratified_split(const std::map<int, std::vector<fs::path>>& by_clas
     }
 }
 
+// Computes a per-file stride: auto mode targets `target_wins` windows from the file
+// (clamped to [1, WINDOW/2] so we never lose all overlap). Manual mode just returns
+// the fixed stride.
+static int file_stride(int rows, bool auto_mode, int manual_stride, int target_wins) {
+    if (!auto_mode) return std::max(1, manual_stride);
+    int slack = rows - WINDOW;
+    if (slack <= 0) return 1;
+    int s = (target_wins > 1) ? slack / (target_wins - 1) : (WINDOW / 2);
+    return std::clamp(s, 1, WINDOW / 2);
+}
+
 // Build raw windowed feature tensor (N, T=249, F=4) from a list of (csv, label) pairs.
 // Output X is flat row-major.
 static void build_from_files(const std::vector<std::pair<fs::path,int>>& files,
                              std::vector<float>& X, std::vector<int32_t>& y,
-                             int32_t& N_out, int32_t T = WINDOW - 1, int32_t F = FEATURES) {
+                             int32_t& N_out,
+                             bool auto_stride = true,
+                             int manual_stride = STRIDE,
+                             int target_wins = 30,
+                             int32_t T = WINDOW - 1, int32_t F = FEATURES) {
     X.clear(); y.clear();
     for (auto& [path, lbl] : files) {
         auto rows = read_imu_csv(path);
         if (static_cast<int>(rows.size()) < WINDOW) continue;
         auto sq = [](float a, float b, float c) { return a*a + b*b + c*c; };
-        for (size_t start = 0; start + WINDOW <= rows.size(); start += STRIDE) {
+        const int stride = file_stride((int)rows.size(), auto_stride, manual_stride, target_wins);
+        for (size_t start = 0; start + WINDOW <= rows.size(); start += (size_t)stride) {
             // Append T*F floats for this window
             for (int t = 1; t < WINDOW; t++) {
                 const auto& cur  = rows[start + t];
@@ -334,12 +360,19 @@ static void worker_build_dataset(AppState& s) {
     int32_t N_train, N_test;
     constexpr int32_t T = db::WINDOW - 1, F = db::FEATURES;
 
+    if (s.build_stride_auto)
+        L.logf("Stride: auto (~%d windows per file, clamped)\n", s.build_target_wins);
+    else
+        L.logf("Stride: fixed %d\n", s.build_stride);
+
     L.log("Extracting train windows...\n");
-    db::build_from_files(train_files, X_train, y_train, N_train);
+    db::build_from_files(train_files, X_train, y_train, N_train,
+                         s.build_stride_auto, s.build_stride, s.build_target_wins);
     L.logf("  X_train: (%d, %d, %d)\n", N_train, T, F);
 
     L.log("Extracting test windows...\n");
-    db::build_from_files(test_files, X_test, y_test, N_test);
+    db::build_from_files(test_files, X_test, y_test, N_test,
+                         s.build_stride_auto, s.build_stride, s.build_target_wins);
     L.logf("  X_test:  (%d, %d, %d)\n", N_test, T, F);
 
     int counts_tr[4] = {}, counts_te[4] = {};
@@ -533,12 +566,18 @@ static void worker_predict(AppState& s) {
     load_weights_from_json(model, fs::path(s.predict_model));
     L.logf("Loaded weights from %s\n\n", s.predict_model);
 
+    const size_t stride = (size_t)dataset_build::file_stride(
+        (int)rows.size(), s.predict_stride_auto, s.predict_stride, s.predict_target_wins);
+    if (s.predict_stride_auto)
+        L.logf("Stride: %zu (auto, target ~%d windows in this CSV)\n", stride, s.predict_target_wins);
+    else
+        L.logf("Stride: %zu (fixed)\n", stride);
     L.log("Window  Rows         idle    walking fidget  drop      -> verdict\n");
     L.log("---------------------------------------------------------------------\n");
     const char* NAMES[4] = {"idle","walking","fidget","drop"};
     int counts[4] = {};
     int n_win = 0;
-    for (size_t start = 0; start + 250 <= rows.size(); start += 125) {
+    for (size_t start = 0; start + 250 <= rows.size(); start += stride) {
         auto input = make_window_tensor(rows, start, norm.mean, norm.std);
         auto probs = model.forward(input);
         int pred = 0;
@@ -583,7 +622,10 @@ static void worker_tune(AppState& s) {
     std::vector<float> X_user;
     std::vector<int32_t> y_user;
     int32_t N_user = 0;
-    dataset_build::build_from_files(user_files, X_user, y_user, N_user);
+    // Reuse the Build-tab auto-stride config for user data so the tune set has
+    // comparable per-file coverage.
+    dataset_build::build_from_files(user_files, X_user, y_user, N_user,
+                                    s.build_stride_auto, s.build_stride, s.build_target_wins);
     L.logf("User windows: %d\n", N_user);
     // Apply ORIGINAL normalization from TRAIN.bin -- do not refit.
     dataset_build::apply_normalization(X_user, N_user, tr.T, tr.F, tr.mean, tr.std);
@@ -1350,6 +1392,14 @@ static void render_build_tab(AppState& s) {
                 labeled_path("##b_test",  "Output test",    s.build_test,  sizeof(s.build_test),  PickKind::FileSave, "Binary dataset\0*.bin\0All files\0*.*\0");
                 labeled_int ("##b_pct",   "Test split (%)", &s.build_test_pct, 5, 25);
                 labeled_int ("##b_seed",  "Random seed",    &s.build_seed,  1, 10);
+                ImGui::Checkbox("Auto stride (target N windows per file)", &s.build_stride_auto);
+                if (s.build_stride_auto) {
+                    labeled_int("##b_tw", "Target windows per file", &s.build_target_wins, 5, 25);
+                    s.build_target_wins = std::clamp(s.build_target_wins, 2, 200);
+                } else {
+                    labeled_int("##b_stride", "Window stride (rows)", &s.build_stride, 5, 25);
+                    s.build_stride = std::clamp(s.build_stride, 1, 125);
+                }
             }
             card_end();
         },
@@ -1438,6 +1488,14 @@ static void render_predict_tab(AppState& s) {
                 labeled_path("##p_csv",   "CSV path",   s.predict_csv,       sizeof(s.predict_csv),       PickKind::FileOpen, "CSV files\0*.csv\0All files\0*.*\0");
                 labeled_path("##p_model", "model.json", s.predict_model,     sizeof(s.predict_model),     PickKind::FileOpen, "JSON model\0*.json\0All files\0*.*\0");
                 labeled_path("##p_train", "TRAIN.bin",  s.predict_train_bin, sizeof(s.predict_train_bin), PickKind::FileOpen, "Binary dataset\0*.bin\0All files\0*.*\0");
+                ImGui::Checkbox("Auto stride (target N windows for this CSV)", &s.predict_stride_auto);
+                if (s.predict_stride_auto) {
+                    labeled_int("##p_tw", "Target windows", &s.predict_target_wins, 5, 25);
+                    s.predict_target_wins = std::clamp(s.predict_target_wins, 2, 500);
+                } else {
+                    labeled_int("##p_stride", "Window stride (rows)", &s.predict_stride, 5, 25);
+                    s.predict_stride = std::clamp(s.predict_stride, 1, 250);
+                }
             }
             card_end();
         },
@@ -1614,6 +1672,35 @@ static void render_runs_tab(AppState& s) {
     card_end();
 
     // ---- Action buttons for the selected row ----
+    // Inline confirmation banner (green on success, red on failure). Auto-dismisses.
+    if (!s.runs_msg.empty() && ImGui::GetTime() < s.runs_msg_until_sec) {
+        ImGui::Dummy(ImVec2(0, 4.0f * scale));
+        ImVec4 fg = s.runs_msg_ok ? rgb( 70, 220, 130) : rgb(235, 100, 100);
+        ImU32 bg = s.runs_msg_ok ? IM_COL32( 30,  80,  50, 255) : IM_COL32( 80,  30,  30, 255);
+        ImU32 bd = s.runs_msg_ok ? IM_COL32( 80, 200, 130, 255) : IM_COL32(230, 110, 110, 255);
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float h = ImGui::GetTextLineHeight() + 16.0f * scale;
+        float w = ImGui::GetContentRegionAvail().x;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), bg, 8.0f * scale);
+        dl->AddRect      (p, ImVec2(p.x + w, p.y + h), bd, 8.0f * scale, 0, 1.0f * scale);
+        // Check mark / X icon
+        float r = 6.0f * scale;
+        ImVec2 c(p.x + 14.0f * scale + r, p.y + h * 0.5f);
+        if (s.runs_msg_ok) {
+            dl->AddLine(ImVec2(c.x - r, c.y),         ImVec2(c.x - r * 0.2f, c.y + r * 0.7f), bd, 2.0f * scale);
+            dl->AddLine(ImVec2(c.x - r * 0.2f, c.y + r * 0.7f), ImVec2(c.x + r, c.y - r * 0.6f), bd, 2.0f * scale);
+        } else {
+            dl->AddLine(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), bd, 2.0f * scale);
+            dl->AddLine(ImVec2(c.x - r, c.y + r), ImVec2(c.x + r, c.y - r), bd, 2.0f * scale);
+        }
+        ImGui::SetCursorScreenPos(ImVec2(c.x + r + 12.0f * scale, p.y + (h - ImGui::GetTextLineHeight()) * 0.5f));
+        ImGui::TextColored(fg, "%s", s.runs_msg.c_str());
+        ImGui::Dummy(ImVec2(0, h - ImGui::GetTextLineHeight() + 4.0f * scale));
+    } else if (!s.runs_msg.empty() && ImGui::GetTime() >= s.runs_msg_until_sec) {
+        s.runs_msg.clear();
+    }
+
     if (s.runs_selected >= 0 && s.runs_selected < (int)runs_cache.size()) {
         const RunInfo& r = runs_cache[s.runs_selected];
         ImGui::Dummy(ImVec2(0, 4.0f * scale));
@@ -1626,6 +1713,9 @@ static void render_runs_tab(AppState& s) {
             fs::create_directories(dst.parent_path(), ec); ec.clear();
             fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
             if (ec) {
+                s.runs_msg = "Could not save: " + ec.message();
+                s.runs_msg_ok = false;
+                s.runs_msg_until_sec = ImGui::GetTime() + 6.0;
                 s.log.logf("Could not copy %s -> %s: %s\n",
                            src.string().c_str(), dst.string().c_str(), ec.message().c_str());
             } else {
@@ -1640,6 +1730,13 @@ static void render_runs_tab(AppState& s) {
                 s.arch_conv_stride   = (int)r.arch.conv_stride;
                 s.arch_hidden_layers = (int)r.arch.hidden_layers;
                 s.arch_hidden_units  = (int)r.arch.hidden_units;
+
+                s.runs_msg = "Saved " + r.folder.filename().string() +
+                             " -> " + dst.string() +
+                             "  (Predict + Tune now point here)";
+                s.runs_msg_ok = true;
+                s.runs_msg_until_sec = ImGui::GetTime() + 8.0;
+
                 s.log.logf("Loaded run %s -> %s  (predict + tune now point here)\n",
                            r.folder.filename().string().c_str(), dst.string().c_str());
             }
