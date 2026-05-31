@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-05-27 11:17:49",
+  "note": "[tune] from model.json",
+  "arch": {
+    "conv_channels": 8,
+    "conv_kernel": 7,
+    "conv_stride": 2,
+    "hidden_layers": 0,
+    "hidden_units": 16
+  },
+  "params": 268,
+  "training": {
+    "epochs": 100,
+    "learning_rate": 0.01,
+    "final_loss": 0.359894,
+    "final_train_acc": 0.905484
+  },
+  "evaluation": {
+    "test_correct": 533,
+    "test_total": 598,
+    "test_accuracy": 0.891304,
+    "per_class": {
+      "idle": 0,
+      "walking": 0.886139,
+      "fidget": 0.893401,
+      "drop": 1
+    }
+  }
+}

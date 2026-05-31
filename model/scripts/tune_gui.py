@@ -244,7 +244,9 @@ class TunerGUI:
 
         cmd = [sys.executable, "-u", str(self.script_dir / "tuning.py"),
                "--epochs", str(self.epochs_var.get()),
-               "--lr", str(self.lr_var.get())]
+               "--lr", str(self.lr_var.get()),
+               # Archive into model/runs/ alongside the C++ train runs.
+               "--runs-dir", str(self.script_dir.parent / "runs")]
         if self.keep_old_var.get():
             cmd.append("--keep_old")
 

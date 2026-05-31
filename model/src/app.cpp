@@ -134,6 +134,10 @@ struct AppState {
     float tune_lr             = 0.005f;
     int   tune_epochs         = 5;
     bool  tune_keep_old       = false;
+    char  tune_note[128]      = "";        // optional run note, mirrored to archive
+    bool  tune_stride_auto    = true;      // independent of Build tab
+    int   tune_stride         = 125;       // manual fallback
+    int   tune_target_wins    = 30;        // target windows per user CSV when auto
 
     // Runs tab
     char runs_dir[260]        = "runs";
@@ -179,7 +183,10 @@ struct RunInfo {
     double      per_class_acc[4] = {};  // idle, walking, fidget, drop
 };
 
-static void archive_run(AppState& s, const ArchSpec& arch, const TrainMetrics& m);
+static void archive_run(AppState& s, const ArchSpec& arch, const TrainMetrics& m,
+                        const std::filesystem::path& source_model,
+                        const std::string& note,
+                        int epochs, float lr);
 static std::vector<RunInfo> scan_runs(const std::filesystem::path& dir);
 static void render_runs_tab(AppState& s);
 
@@ -541,7 +548,8 @@ static void worker_train(AppState& s) {
     L.logf("Wrote weights to %s\n", s.train_model_out);
 
     // Archive this run so it can be compared against past attempts later.
-    archive_run(s, arch, m);
+    archive_run(s, arch, m, fs::path(s.train_model_out), s.train_note,
+                s.train_epochs, s.train_lr);
 
     L.log("=== done ===\n");
     s.runs_refresh = true;  // Runs tab will re-scan the folder on next render
@@ -622,10 +630,12 @@ static void worker_tune(AppState& s) {
     std::vector<float> X_user;
     std::vector<int32_t> y_user;
     int32_t N_user = 0;
-    // Reuse the Build-tab auto-stride config for user data so the tune set has
-    // comparable per-file coverage.
+    if (s.tune_stride_auto)
+        L.logf("Stride: auto (~%d windows per user CSV)\n", s.tune_target_wins);
+    else
+        L.logf("Stride: fixed %d\n", s.tune_stride);
     dataset_build::build_from_files(user_files, X_user, y_user, N_user,
-                                    s.build_stride_auto, s.build_stride, s.build_target_wins);
+                                    s.tune_stride_auto, s.tune_stride, s.tune_target_wins);
     L.logf("User windows: %d\n", N_user);
     // Apply ORIGINAL normalization from TRAIN.bin -- do not refit.
     dataset_build::apply_normalization(X_user, N_user, tr.T, tr.F, tr.mean, tr.std);
@@ -649,14 +659,26 @@ static void worker_tune(AppState& s) {
     DatasetOpener::Dataset te{};
     bool have_test = fs::is_regular_file(s.tune_test_bin);
     if (have_test) te = DatasetOpener::load_bin(s.tune_test_bin);
+    TrainMetrics m{};
     train_loop(s, model, X_mix, y_mix, N_mix, tr.T, tr.F,
                s.tune_epochs, s.tune_lr,
-               have_test ? &te.X : nullptr, have_test ? &te.y : nullptr, have_test ? te.N : 0);
+               have_test ? &te.X : nullptr, have_test ? &te.y : nullptr, have_test ? te.N : 0,
+               &m);
 
     fs::path out = s.tune_keep_old ? fs::path("model_tuned.json") : fs::path(s.tune_model_in);
     export_model_json(model, out, &arch);
     L.logf("Wrote tuned weights to %s\n", out.string().c_str());
     if (s.tune_keep_old) L.logf("(original %s preserved)\n", s.tune_model_in);
+
+    // Archive this tune as a run so it shows up in the Runs tab next to fresh-train runs.
+    std::string note = "[tune] from " + fs::path(s.tune_model_in).filename().string();
+    if (s.tune_note[0]) {
+        note += " -- ";
+        note += s.tune_note;
+    }
+    archive_run(s, arch, m, out, note, s.tune_epochs, s.tune_lr);
+    s.runs_refresh = true;
+
     L.log("=== done ===\n");
 }
 
@@ -693,7 +715,10 @@ static long long count_params(const ArchSpec& a, uint32_t in_channels = 4, uint3
     return conv_p + dense_p;
 }
 
-static void archive_run(AppState& s, const ArchSpec& arch, const TrainMetrics& m) {
+static void archive_run(AppState& s, const ArchSpec& arch, const TrainMetrics& m,
+                        const fs::path& source_model,
+                        const std::string& note,
+                        int epochs, float lr) {
     Logger& L = s.log;
     fs::path archive_dir = fs::path(s.runs_dir);
     std::error_code ec;
@@ -707,10 +732,9 @@ static void archive_run(AppState& s, const ArchSpec& arch, const TrainMetrics& m
     }
 
     // Snapshot the model weights into the run folder.
-    fs::path src_model = fs::path(s.train_model_out);
     fs::path dst_model = run_dir / "model.json";
-    if (fs::is_regular_file(src_model)) {
-        fs::copy_file(src_model, dst_model, fs::copy_options::overwrite_existing, ec);
+    if (fs::is_regular_file(source_model)) {
+        fs::copy_file(source_model, dst_model, fs::copy_options::overwrite_existing, ec);
     }
 
     const long long total_p = count_params(arch);
@@ -720,7 +744,7 @@ static void archive_run(AppState& s, const ArchSpec& arch, const TrainMetrics& m
     std::ofstream f(metrics_path);
     f << "{\n";
     f << "  \"timestamp\": \"" << timestamp_display() << "\",\n";
-    f << "  \"note\": \"" << s.train_note << "\",\n";
+    f << "  \"note\": \"" << note << "\",\n";
     f << "  \"arch\": {\n";
     f << "    \"conv_channels\": " << arch.conv_channels << ",\n";
     f << "    \"conv_kernel\": "   << arch.conv_kernel   << ",\n";
@@ -730,8 +754,8 @@ static void archive_run(AppState& s, const ArchSpec& arch, const TrainMetrics& m
     f << "  },\n";
     f << "  \"params\": " << total_p << ",\n";
     f << "  \"training\": {\n";
-    f << "    \"epochs\": "        << s.train_epochs << ",\n";
-    f << "    \"learning_rate\": " << s.train_lr     << ",\n";
+    f << "    \"epochs\": "        << epochs << ",\n";
+    f << "    \"learning_rate\": " << lr     << ",\n";
     f << "    \"final_loss\": "    << m.final_loss   << ",\n";
     f << "    \"final_train_acc\": " << (m.final_total > 0 ? (double)m.final_correct / m.final_total : 0.0) << "\n";
     f << "  },\n";
@@ -1536,6 +1560,15 @@ static void render_tune_tab(AppState& s) {
                 labeled_path ("##u_test",  "TEST.bin",         s.tune_test_bin,  sizeof(s.tune_test_bin),  PickKind::FileOpen, "Binary dataset\0*.bin\0All files\0*.*\0");
                 labeled_int  ("##u_ep",    "Epochs",           &s.tune_epochs, 1, 5);
                 labeled_float("##u_lr",    "Learning rate",    &s.tune_lr, 0.0005f, 0.005f, "%.4f");
+                labeled_text ("##u_note",  "Run note",         s.tune_note, sizeof(s.tune_note));
+                ImGui::Checkbox("Auto stride", &s.tune_stride_auto);
+                if (s.tune_stride_auto) {
+                    labeled_int("##u_tw", "Target windows per file", &s.tune_target_wins, 5, 25);
+                    s.tune_target_wins = std::clamp(s.tune_target_wins, 2, 200);
+                } else {
+                    labeled_int("##u_stride", "Window stride", &s.tune_stride, 5, 25);
+                    s.tune_stride = std::clamp(s.tune_stride, 1, 125);
+                }
                 ImGui::Checkbox("Keep old (write to model_tuned.json)", &s.tune_keep_old);
             } else {
                 ImGui::BeginChild("##tune_paths", ImVec2(left_w, 0),
@@ -1545,6 +1578,7 @@ static void render_tune_tab(AppState& s) {
                 labeled_path ("##u_model", "model.json",       s.tune_model_in,  sizeof(s.tune_model_in),  PickKind::FileOpen, "JSON model\0*.json\0All files\0*.*\0");
                 labeled_path ("##u_train", "TRAIN.bin",        s.tune_train_bin, sizeof(s.tune_train_bin), PickKind::FileOpen, "Binary dataset\0*.bin\0All files\0*.*\0");
                 labeled_path ("##u_test",  "TEST.bin",         s.tune_test_bin,  sizeof(s.tune_test_bin),  PickKind::FileOpen, "Binary dataset\0*.bin\0All files\0*.*\0");
+                labeled_text ("##u_note",  "Run note",         s.tune_note, sizeof(s.tune_note));
                 ImGui::EndChild();
 
                 ImGui::SameLine(0, sub_gap);
@@ -1554,6 +1588,14 @@ static void render_tune_tab(AppState& s) {
                                   ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
                 labeled_int  ("##u_ep",    "Epochs",        &s.tune_epochs, 1, 5);
                 labeled_float("##u_lr",    "Learning rate", &s.tune_lr, 0.0005f, 0.005f, "%.4f");
+                ImGui::Checkbox("Auto stride", &s.tune_stride_auto);
+                if (s.tune_stride_auto) {
+                    labeled_int("##u_tw", "Target windows", &s.tune_target_wins, 5, 25);
+                    s.tune_target_wins = std::clamp(s.tune_target_wins, 2, 200);
+                } else {
+                    labeled_int("##u_stride", "Stride", &s.tune_stride, 5, 25);
+                    s.tune_stride = std::clamp(s.tune_stride, 1, 125);
+                }
                 ImGui::Dummy(ImVec2(0, 6.0f * g_dpi_scale));
                 ImGui::Checkbox("Keep old", &s.tune_keep_old);
                 ImGui::EndChild();

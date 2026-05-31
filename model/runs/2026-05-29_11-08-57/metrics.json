@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-05-29 11:08:57",
+  "note": "",
+  "arch": {
+    "conv_channels": 8,
+    "conv_kernel": 7,
+    "conv_stride": 2,
+    "hidden_layers": 0,
+    "hidden_units": 16
+  },
+  "params": 268,
+  "training": {
+    "epochs": 15,
+    "learning_rate": 0.01,
+    "final_loss": 0.192086,
+    "final_train_acc": 0.94469
+  },
+  "evaluation": {
+    "test_correct": 498,
+    "test_total": 700,
+    "test_accuracy": 0.711429,
+    "per_class": {
+      "idle": 0,
+      "walking": 0.579208,
+      "fidget": 0.833333,
+      "drop": 0.5
+    }
+  }
+}

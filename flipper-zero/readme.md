@@ -1,64 +1,11 @@
-# Flipper Zero Motion Module
+# Flipper Zero apps
 
-This folder contains the on-device components for the Motion Intelligence Detector system.
+This folder holds the two apps that run on the Flipper.
 
-It is responsible for everything that runs directly on the Flipper Zero, including data collection, lightweight motion inference, and communication with the SD card and PC training tools.
+- [expo_app/](expo_app/) is the FliPort data collector. You use it to record labeled motion (drop, idle, walking, fidget) to the SD card. Those recordings are what the model trains on.
 
----
+- [drop-dect/](drop-dect/) is the live detector. It loads the trained model, watches the motion sensor, and sounds a siren when it decides the device has been dropped. It comes as a normal app and as a background service for custom firmware.
 
-## Purpose
+Both read the same ICM42688P motion sensor over SPI at 100 Hz, and both share the same driver in their `driver/` folder.
 
-The Flipper Zero module has three main responsibilities:
-
-### 1. Motion Data Collection
-
-A lightweight firmware application will collect IMU sensor data and structure it into usable samples. These samples are stored on the SD card and later used for model training.
-
-### 2. On-Device Inference
-
-A background firmware process runs a compressed decision tree model to classify motion states in real time. This runs continuously with minimal performance impact.
-
-### 3. PC Synchronization
-
-The device supports exporting collected datasets and receiving updated models from a PC-based training tool for personalization and fine-tuning.
-
----
-
-## What This Folder Will Contain
-
-* IMU data collection application (Flipper firmware app)
-* Background inference engine (C-based lightweight model runtime)
-* Feature extraction utilities for sliding window processing
-* SD card logging format and dataset storage structure
-* Interface layer for PC synchronization and model updates
-
----
-
-## Data Output
-
-Collected motion data is saved in structured format on the SD card and later used for training:
-
-```json
-{
-  "features": [0.12, 0.45, 0.78],
-  "label": "walking",
-  "timestamp": 1715001234
-}
-```
-
----
-
-## PC Integration
-
-A separate PC tool will:
-
-* Pull collected motion datasets from the device
-* Train and fine-tune the decision tree model
-* Export optimized C inference logic
-* Push updated models back to the Flipper Zero
-
----
-
-## Summary
-
-This folder contains all embedded-side logic required for motion data collection, real-time inference, and communication with the external training pipeline. It serves as the runtime foundation for the Motion Intelligence Detector system on the Flipper Zero.
+Start with the collector to gather data, train on the PC (see [../model/readme.md](../model/readme.md)), then run the detector. Each folder has its own readme.

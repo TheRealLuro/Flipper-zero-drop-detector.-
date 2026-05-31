@@ -1,121 +1,35 @@
-# Model Training & Optimization Module
+# Training and workbench
 
-This folder contains only the machine learning components for the Motion Intelligence Detector system.
+This folder is the PC side: it turns the motion recordings collected on the Flipper into a trained model, and it's where you experiment with the model. None of it runs on the device.
 
-It is responsible for training, evaluating, optimizing, and exporting motion classification models used by the Flipper Zero firmware.
+## What the pieces are
 
-This module runs entirely off-device and produces lightweight models designed for embedded inference.
+- `scripts/data.py` builds the dataset. It reads the CSV recordings, cuts them into 2.5-second windows, turns each window into a few simple features, and writes `TRAIN.bin` and `TEST.bin`. It splits by whole recording, not by window, so the test score can't be inflated by near-duplicate windows.
+- `src/main.cpp` is the trainer. It builds the network, trains it, prints accuracy per class, and saves the weights to `data/model.json`. The network layers and the math behind them are written from scratch here, no ML framework.
+- `src/app.cpp` is `flip-keeper`, a small Windows desktop app with a UI for the same steps: build the dataset, train, run predictions on a CSV, and fine-tune. A prebuilt `flip-keeper.exe` is included.
+- `scripts/tuning.py` fine-tunes an existing model on your own recordings (see `data/user_data/README.txt`).
 
----
+## The model in one paragraph
 
-## Purpose
+Four features per timestep go into a 1-D convolution, a ReLU, a global max-pool, a small dense layer, and a softmax over the four classes. That's about 268 weights total. It's deliberately tiny so the same forward pass can run on the Flipper. The full write-up is in [../MODEL_CARD.md](../MODEL_CARD.md).
 
-This module focuses strictly on model development tasks:
+## Using the desktop app
 
-* Training motion classification models from IMU feature datasets
-* Cleaning and normalizing datasets
-* Evaluating different model approaches
-* Compressing models for embedded constraints
-* Fine-tuning models using user-collected data
-* Exporting models into deployable format
-
----
-
-## Core Components
-
-### 1. Model Training
-
-Trains the primary motion classification model using labeled feature windows.
-
-* Decision tree training (primary model)
-* Dataset splitting and validation
-* Performance evaluation across motion classes
-
----
-
-### 2. Data Cleaning & Normalization
-
-Prepares datasets for training.
-
-* Removes invalid or noisy samples
-* Normalizes feature values
-* Standardizes feature vectors
-* Balances class distribution when needed
-
----
-
-### 3. Model Fine-Tuning
-
-Supports updating models using new user-collected data.
-
-* Imports new dataset from device
-* Merges with existing training data
-* Retrains or updates model parameters
-* Outputs personalized model variant
-
----
-
-### 4. Model Compression
-
-Reduces model size for embedded deployment.
-
-* Decision tree pruning (depth reduction)
-* Feature reduction and selection
-* Quantization of thresholds
-* Memory footprint optimization
-
----
-
-### 5. Alternative Model Experiments
-
-Used for comparison and benchmarking.
-
-* Simple rule-based classifiers
-* Shallow decision trees
-* Lightweight hybrid variants
-
----
-
-### 6. Model Export
-
-Converts trained models into a deployable format.
-
-* Decision tree → C-compatible logic
-* Hardcoded inference rules
-* Embedded-friendly structure generation
-
----
-
-## Outputs
-
-This module produces:
-
-* Trained motion classification model
-* Compressed/pruned model version
-* Quantized feature thresholds
-* Exported C inference logic
-* Fine-tuned user-specific models
-
----
-
-## Workflow
-
-```
-Dataset (IMU Features)
-        ↓
-Data Cleaning & Normalization
-        ↓
-Model Training
-        ↓
-Evaluation
-        ↓
-Compression
-        ↓
-Model Export
+```powershell
+cd model
+.\flip-keeper.exe
 ```
 
----
+Go through the tabs left to right: build the dataset, train, then point Predict at any CSV under `data/user_data/` to see what the model says. To rebuild the app you need Visual Studio 2022; run `.\build_app.bat`.
 
-## Summary
+## Using the scripts instead
 
-This folder contains only the machine learning pipeline for motion classification. It handles dataset preparation, model training, optimization, and export into a lightweight format suitable for embedded execution on the Flipper Zero.
+```powershell
+cd model\scripts
+python data.py            # build TRAIN.bin and TEST.bin
+python tuning.py          # fine-tune model.json on your own recordings
+```
+
+## Output
+
+The trained weights land in `data/model.json`. That's the file the Flipper detector loads. After retraining, copy it over to `flipper-zero/drop-dect/assets/model.json`.

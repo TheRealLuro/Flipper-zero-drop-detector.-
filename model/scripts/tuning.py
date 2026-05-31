@@ -21,9 +21,11 @@ provided samples for. Normalization stats from the original TRAIN.bin are reused
 import argparse
 import json
 import os
+import shutil
 import struct
 import sys
 import time
+from datetime import datetime
 import numpy as np
 
 # Reuse the data.py helpers so feature math stays in lockstep with training.
@@ -33,9 +35,19 @@ import data as data_module
 CLASS_NAMES = ["idle", "walking", "fidget", "drop"]
 NUM_CLASSES = 4
 CHANNELS = 4
+
+# Architecture defaults — overwritten by load_model_json() from the model.json
+# arch block (kept here only as a fallback for legacy files that lack one).
 KERNEL = 7
 STRIDE = 2
 CONV_OUT = 8
+ARCH = {
+    "conv_channels": 8,
+    "conv_kernel": 7,
+    "conv_stride": 2,
+    "hidden_layers": 0,
+    "hidden_units": 16,
+}
 
 
 # ---------- I/O ----------
@@ -52,28 +64,61 @@ def load_train_bin(path):
 
 
 def load_model_json(path):
-    """Reads conv1d/dense weights and biases from model.json."""
+    """Reads conv1d/dense weights and biases from model.json.
+
+    Also populates module-level ARCH / KERNEL / STRIDE / CONV_OUT from the
+    arch block so the conv forward/backward use the same stride/kernel the
+    C++ trainer chose. Falls back to defaults if arch is missing.
+
+    Accepts both the modern "dense_0" key and the legacy "dense" key.
+    """
+    global KERNEL, STRIDE, CONV_OUT, ARCH
     with open(path, "r") as f:
         m = json.load(f)
+
+    arch = m.get("arch") or {}
+    ARCH = {
+        "conv_channels": int(arch.get("conv_channels", ARCH["conv_channels"])),
+        "conv_kernel":   int(arch.get("conv_kernel",   ARCH["conv_kernel"])),
+        "conv_stride":   int(arch.get("conv_stride",   ARCH["conv_stride"])),
+        "hidden_layers": int(arch.get("hidden_layers", ARCH["hidden_layers"])),
+        "hidden_units":  int(arch.get("hidden_units",  ARCH["hidden_units"])),
+    }
+    KERNEL   = ARCH["conv_kernel"]
+    STRIDE   = ARCH["conv_stride"]
+    CONV_OUT = ARCH["conv_channels"]
+
     conv_w = np.array(m["conv1d"]["weight"], dtype=np.float32).reshape(m["conv1d"]["weight_shape"])
     conv_b = np.array(m["conv1d"]["bias"],   dtype=np.float32)
-    dense_w = np.array(m["dense"]["weight"], dtype=np.float32).reshape(m["dense"]["weight_shape"])
-    dense_b = np.array(m["dense"]["bias"],   dtype=np.float32)
+
+    dense_key = "dense_0" if "dense_0" in m else "dense"
+    if dense_key not in m:
+        raise KeyError("model.json has neither 'dense_0' nor 'dense' block")
+    dense_w = np.array(m[dense_key]["weight"], dtype=np.float32).reshape(m[dense_key]["weight_shape"])
+    dense_b = np.array(m[dense_key]["bias"],   dtype=np.float32)
+
+    print(f"  arch: stride={STRIDE} kernel={KERNEL} conv_channels={CONV_OUT} "
+          f"hidden_layers={ARCH['hidden_layers']} hidden_units={ARCH['hidden_units']}")
     return conv_w, conv_b, dense_w, dense_b
 
 
 def save_model_json(path, conv_w, conv_b, dense_w, dense_b):
-    """Writes back in the same shape main.cpp's export_model_json emits."""
+    """Writes back in the same shape main.cpp's export_model_json emits.
+
+    Preserves the arch block so re-loading recovers the same stride/kernel.
+    Writes weights under "dense_0" to match the modern C++ format.
+    """
     def floats(arr):
         return [float(x) for x in arr.flatten()]
     out = {
+        "arch": ARCH,
         "conv1d": {
             "weight_shape": list(conv_w.shape),
             "weight": floats(conv_w),
             "bias_shape": list(conv_b.shape),
             "bias": floats(conv_b),
         },
-        "dense": {
+        "dense_0": {
             "weight_shape": list(dense_w.shape),
             "weight": floats(dense_w),
             "bias_shape": list(dense_b.shape),
@@ -320,7 +365,71 @@ def fine_tune(X, y, conv_w, conv_b, dense_w, dense_b, epochs, lr, eval_X, eval_y
     sign = "+" if delta >= 0 else ""
     print(f"Delta on eval set: {sign}{100*delta:.1f}%")
     print("-" * 78)
-    return conv_w, conv_b, dense_w, dense_b
+    metrics = {
+        "final_loss":     avg_loss,
+        "final_train_acc": correct / len(idx),
+        "eval_acc":       post_acc,
+        "eval_correct":   sum(post_pc),
+        "eval_total":     sum(post_pt),
+        "eval_per_class_correct": post_pc,
+        "eval_per_class_total":   post_pt,
+    }
+    return conv_w, conv_b, dense_w, dense_b, metrics
+
+
+# ---------- run archive (mirrors archive_run() in app.cpp) ----------
+
+def count_params(arch, in_channels=CHANNELS, num_classes=NUM_CLASSES):
+    conv_p = in_channels * arch["conv_channels"] * arch["conv_kernel"] + arch["conv_channels"]
+    prev = arch["conv_channels"]
+    dense_p = 0
+    for _ in range(arch["hidden_layers"]):
+        dense_p += prev * arch["hidden_units"] + arch["hidden_units"]
+        prev = arch["hidden_units"]
+    dense_p += prev * num_classes + num_classes
+    return conv_p + dense_p
+
+
+def archive_tune_run(model_out_path, metrics, epochs, lr, runs_dir="runs", note="tune"):
+    """Writes runs/<ts>_tune/{model.json, metrics.json} in the same shape app.cpp uses."""
+    now = datetime.now()
+    ts_folder  = now.strftime("%Y-%m-%d_%H-%M-%S") + "_tune"
+    ts_display = now.strftime("%Y-%m-%d %H:%M:%S")
+
+    run_dir = os.path.join(runs_dir, ts_folder)
+    os.makedirs(run_dir, exist_ok=True)
+
+    if os.path.isfile(model_out_path):
+        shutil.copyfile(model_out_path, os.path.join(run_dir, "model.json"))
+
+    pc = metrics["eval_per_class_correct"]
+    pt = metrics["eval_per_class_total"]
+    per_class = {
+        CLASS_NAMES[c]: (pc[c] / pt[c] if pt[c] > 0 else 0.0)
+        for c in range(NUM_CLASSES)
+    }
+
+    out = {
+        "timestamp": ts_display,
+        "note": note,
+        "arch": ARCH,
+        "params": count_params(ARCH),
+        "training": {
+            "epochs": epochs,
+            "learning_rate": lr,
+            "final_loss": metrics["final_loss"],
+            "final_train_acc": metrics["final_train_acc"],
+        },
+        "evaluation": {
+            "test_correct": metrics["eval_correct"],
+            "test_total":   metrics["eval_total"],
+            "test_accuracy": metrics["eval_acc"],
+            "per_class": per_class,
+        },
+    }
+    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
+        json.dump(out, f, indent=2)
+    print(f"Archived tune run to {run_dir}")
 
 
 # ---------- main ----------
@@ -335,6 +444,12 @@ def main():
     ap.add_argument("--lr",        type=float, default=0.005)
     ap.add_argument("--keep_old",  action="store_true",
                     help="if set, write tuned weights to model_tuned.json instead of overwriting model.json")
+    ap.add_argument("--runs-dir",  default="runs",
+                    help="directory where archived tune runs are written (default: runs/)")
+    ap.add_argument("--no-archive", action="store_true",
+                    help="skip writing runs/<ts>_tune/{model.json,metrics.json}")
+    ap.add_argument("--note", default="tune",
+                    help="free-text note recorded in metrics.json (default: 'tune')")
     args = ap.parse_args()
 
     if not os.path.isfile(args.model):
@@ -382,7 +497,7 @@ def main():
         print(f"  (no {args.test_bin}; using user data as eval set)")
         X_eval, y_eval = X_user, y_user
 
-    conv_w, conv_b, dense_w, dense_b = fine_tune(
+    conv_w, conv_b, dense_w, dense_b, metrics = fine_tune(
         X_mix, y_mix, conv_w, conv_b, dense_w, dense_b,
         epochs=args.epochs, lr=args.lr,
         eval_X=X_eval, eval_y=y_eval,
@@ -393,6 +508,11 @@ def main():
     print(f"\nWrote tuned weights to {out_path}")
     if args.keep_old:
         print(f"(original {args.model} preserved)")
+
+    if not args.no_archive:
+        archive_tune_run(out_path, metrics,
+                         epochs=args.epochs, lr=args.lr,
+                         runs_dir=args.runs_dir, note=args.note)
 
 
 if __name__ == "__main__":
