@@ -27,15 +27,30 @@
 #define MODEL_LOAD_ATTEMPTS 10
 #define MODEL_LOAD_RETRY_MS 1000u
 #define DROP_THRESHOLD 0.5f
+#define IMU_RETRY_MS 2000u /* re-attempt monitor/IMU bring-up if the module isn't present yet */
+#define SVC_IDLE_MS 60000u /* wake interval while parked with nothing to run */
+
+/*
+ * A FlipperAppType.SERVICE entry point MUST NEVER RETURN. The kernel panics with
+ * "Service threads MUST NOT return" (locking the Flipper) the instant a service
+ * thread falls off its entry function. So every "give up" path below parks here
+ * forever instead of returning — the system stays up, the siren just never arms.
+ */
+__attribute__((noreturn)) static void drop_dect_svc_idle_forever(void) {
+    while(true) furi_delay_ms(SVC_IDLE_MS);
+}
 
 int32_t drop_dect_svc(void* p) {
     UNUSED(p);
 
     DropModel* model = malloc(sizeof(DropModel));
-    if(!model) return -1;
+    if(!model) {
+        FURI_LOG_E(TAG, "out of memory; service idle");
+        drop_dect_svc_idle_forever(); /* must not return */
+    }
 
     /* SD may mount slightly after services start; retry a few times rather than
-     * crashing the boot sequence if the model isn't readable yet. */
+     * giving up if the model isn't readable yet. */
     bool loaded = false;
     for(int attempt = 0; attempt < MODEL_LOAD_ATTEMPTS && !loaded; attempt++) {
         loaded = model_load_json(model, SVC_MODEL_PATH);
@@ -46,9 +61,9 @@ int32_t drop_dect_svc(void* p) {
     }
 
     if(!loaded) {
-        FURI_LOG_E(TAG, "no model at %s; service idle", SVC_MODEL_PATH);
+        FURI_LOG_E(TAG, "no model at %s; service idle (siren won't arm)", SVC_MODEL_PATH);
         free(model);
-        return 0; /* degrade gracefully — do not block the system */
+        drop_dect_svc_idle_forever(); /* must not return */
     }
 
     MonitorCfg cfg = {0};
@@ -59,9 +74,15 @@ int32_t drop_dect_svc(void* p) {
     cfg.ud = NULL;
     cfg.notif = NULL; /* no notification record held; speaker-only alarm */
 
-    FURI_LOG_I(TAG, "drop service running");
-    monitor_run(&cfg); /* normally never returns (cfg.running stays true) */
-
-    free(model);
-    return 0;
+    /* monitor_run() loops forever while running, but returns early if the IMU
+     * can't be opened (e.g. the module isn't attached). Retry instead of
+     * returning, so the siren arms as soon as the hardware shows up. This loop
+     * never breaks: the service owns `model` for the device's lifetime. */
+    while(true) {
+        FURI_LOG_I(TAG, "drop service running");
+        monitor_run(&cfg);
+        FURI_LOG_W(
+            TAG, "monitor exited (IMU unavailable?); retrying in %lu ms", (unsigned long)IMU_RETRY_MS);
+        furi_delay_ms(IMU_RETRY_MS);
+    }
 }
