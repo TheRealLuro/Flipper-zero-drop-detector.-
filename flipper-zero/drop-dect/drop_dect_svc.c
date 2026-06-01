@@ -36,7 +36,7 @@
  * thread falls off its entry function. So every "give up" path below parks here
  * forever instead of returning — the system stays up, the siren just never arms.
  */
-__attribute__((noreturn)) static void drop_dect_svc_idle_forever(void) {
+__attribute__((__noreturn__)) static void drop_dect_svc_idle_forever(void) {
     while(true) furi_delay_ms(SVC_IDLE_MS);
 }
 
