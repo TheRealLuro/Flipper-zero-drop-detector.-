@@ -157,7 +157,7 @@ bool model_load_json(DropModel* model, const char* path) {
     char* buf = NULL;
 
     do {
-        if(!storage_file_open(file, path, FSAM_READ, FSOM_OPENING_EXISTING)) {
+        if(!storage_file_open(file, path, FSAM_READ, FSOM_OPEN_EXISTING)) {
             FURI_LOG_E(TAG, "open failed: %s", path);
             break;
         }
